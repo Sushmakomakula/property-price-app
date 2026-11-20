@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f6b57">
+<meta name="description" content="US home values, actual sale prices and asking prices by state, county, metro and ZIP code.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Price Finder">
+<title>US Property Price Finder</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{-webkit-text-size-adjust:100%}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+
+/* Layout: survey-sheet app. Header stats strip, map + detail panel side by side (stacked on phones), search and rankings below. */
+:root{
+  --bg:#f3f5f4; --surface:#ffffff; --ink:#15231f; --muted:#5d6e68; --line:#d8e0dd;
+  --accent:#0f6b57; --accent-soft:#e2f0ec; --up:#b4471f; --down:#1f6fb4;
+  --s0:#eaf3ee; --s1:#a9d4c3; --s2:#5fae98; --s3:#2a7f6c; --s4:#0c4b3f; --nodata:#e3e6e5; --stroke:#ffffff;
+  --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1715; --surface:#16211e; --ink:#e4ece9; --muted:#93a59f; --line:#28372f;
+  --accent:#5fcfae; --accent-soft:#1c3a32; --up:#f08a62; --down:#6fb3f0;
+  --s0:#1d3b33; --s1:#23604f; --s2:#2f8f74; --s3:#55bf9c; --s4:#a8ecd2; --nodata:#222c29; --stroke:#0f1715; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1715; --surface:#16211e; --ink:#e4ece9; --muted:#93a59f; --line:#28372f;
+  --accent:#5fcfae; --accent-soft:#1c3a32; --up:#f08a62; --down:#6fb3f0;
+  --s0:#1d3b33; --s1:#23604f; --s2:#2f8f74; --s3:#55bf9c; --s4:#a8ecd2; --nodata:#222c29; --stroke:#0f1715; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+.wrap{max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1,h2,h3{font-family:var(--f-display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:clamp(1.6rem,3.2vw,2.3rem);font-weight:800}
+h2{font-size:1.15rem;font-weight:700}
+.eyebrow{font-family:var(--f-mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--f-mono)}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px 24px}
+header p{margin:4px 0 0;color:var(--muted);max-width:62ch}
+.notice{background:var(--accent-soft);border-radius:10px;padding:10px 14px;font-size:.88rem;display:flex;gap:10px;align-items:flex-start}
+.notice b{color:var(--accent)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.stat{background:var(--surface);padding:12px 16px;display:flex;flex-direction:column;gap:2px}
+.stat .v{font-family:var(--f-display);font-size:1.45rem;font-weight:700}
+.chg{font-family:var(--f-mono);font-size:.8rem}
+.chg.up{color:var(--up)} .chg.down{color:var(--down)}
+.main{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:860px){.main{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;min-width:0}
+.maphead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.crumbs{display:flex;gap:6px;align-items:center;font-size:.92rem;flex-wrap:wrap}
+.crumbs button{all:unset;cursor:pointer;color:var(--accent);font-weight:600}
+.crumbs button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex-wrap:wrap}
+.seg button{border:0;background:transparent;color:var(--muted);font:500 .82rem var(--f-body);padding:6px 10px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--surface)}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+#map{width:100%;height:auto;display:block;touch-action:manipulation}
+#map path.region{stroke:var(--stroke);stroke-width:.6;cursor:pointer;transition:opacity .15s}
+#map path.region:hover{opacity:.75}
+#map path.sel{stroke:var(--ink);stroke-width:1.6}
+#map path.border{fill:none;stroke:var(--stroke);stroke-width:1.2;pointer-events:none}
+.legend{display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--muted);margin-top:8px;flex-wrap:wrap}
+.legend .bar{display:flex;height:10px;border-radius:3px;overflow:hidden;width:min(260px,60vw)}
+.legend .bar i{flex:1}
+.tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--bg);padding:6px 10px;border-radius:6px;font-size:.82rem;z-index:20;white-space:nowrap}
+.detail{display:flex;flex-direction:column;gap:14px}
+.detail .price{font-family:var(--f-display);font-size:2.2rem;font-weight:800;line-height:1.1}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
+.kv div{display:flex;flex-direction:column;border-top:1px solid var(--line);padding-top:6px}
+.kv span:first-child{font-size:.75rem;color:var(--muted)}
+.kv span:last-child{font-weight:600}
+#trend{width:100%;height:150px;display:block}
+#trend text{fill:var(--muted);font:11px var(--f-mono)}
+#trend .grid{stroke:var(--line)}
+#trend .area{fill:var(--accent-soft)}
+#trend .line{fill:none;stroke:var(--accent);stroke-width:2}
+#trend circle{fill:var(--accent)}
+.links{display:flex;flex-wrap:wrap;gap:8px}
+.links a{font-size:.82rem;color:var(--accent);border:1px solid var(--line);border-radius:999px;padding:4px 10px;text-decoration:none}
+.links a:hover{border-color:var(--accent)}
+a.sold{color:var(--accent);font-size:.82rem}
+.lower{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:860px){.lower{grid-template-columns:1fr}}
+.searchrow{display:flex;gap:8px;margin:10px 0}
+input[type=search]{flex:1;min-width:0;font:inherit;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+input[type=search]:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.tbl{overflow-x:auto;max-height:420px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th{font:500 .72rem var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surface)}
+td{padding:7px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.r,th.r{text-align:right}
+tr.click{cursor:pointer} tr.click:hover td{background:var(--accent-soft)}
+.muted{color:var(--muted)}
+.hint{font-size:.82rem;color:var(--muted)}
+footer{font-size:.8rem;color:var(--muted);max-width:80ch}
+footer a{color:var(--accent)}
+.loading{padding:40px;text-align:center;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow" id="asof">Market data</div>
+      <h1>US Property Price Finder</h1>
+      <p>See what homes and property sell for in every state, county, metro area and ZIP code, and find recently sold properties and land. Click a state on the map to see its counties.</p>
+    </div>
+  </header>
+
+  <div class="notice"><b>Three prices</b><span><strong>Typical value</strong> is what a middle-of-the-market home is worth, worked out from real sales (Zillow). <strong>Median sale price</strong> is what homes actually sold for, by metro area (Zillow). <strong>Asking price</strong> is what sellers list for now (Realtor.com). Use the <strong>Recently sold</strong> links to see individual properties, including land, and their sold prices.</span></div>
+
+  <section class="stats" id="stats" aria-label="National summary"></section>
+
+  <div class="main">
+    <section class="card" aria-label="Map">
+      <div class="maphead">
+        <nav class="crumbs" id="crumbs"></nav>
+        <div class="seg" id="metric" role="group" aria-label="Color map by">
+          <button data-m="zv" aria-pressed="true">Typical value</button>
+          <button data-m="p" aria-pressed="false">Asking price</button>
+          <button data-m="ppsf" aria-pressed="false">Price / sq ft</button>
+          <button data-m="yy" aria-pressed="false">1-yr change</button>
+          <button data-m="dom" aria-pressed="false">Days on market</button>
+        </div>
+      </div>
+      <svg id="map" viewBox="0 0 975 610" role="img" aria-label="Map of the United States colored by property price"><g id="g"></g></svg>
+      <div class="legend" id="legend"></div>
+    </section>
+
+    <aside class="card detail" id="detail" aria-live="polite"></aside>
+  </div>
+
+  <div class="lower">
+    <section class="card">
+      <h2>Search a ZIP code or city</h2>
+      <div class="searchrow">
+        <input type="search" id="q" placeholder="e.g. 78704, Austin, or Miami FL" autocomplete="off">
+      </div>
+      <div class="tbl"><table id="zres"><thead><tr><th>ZIP</th><th>Area</th><th class="r">Typical value</th><th class="r">Asking</th><th class="r">Listings</th><th>Recently sold</th></tr></thead><tbody></tbody></table></div>
+      <div class="hint" id="zhint">Showing example results for Austin, TX. Type a ZIP code or city name.</div>
+    </section>
+    <section class="card">
+      <div class="maphead" style="margin:0">
+        <h2 id="rankTitle">Rankings</h2>
+        <div class="seg" id="rankSort" role="group" aria-label="Sort rankings">
+          <button data-s="desc" aria-pressed="true">Most expensive</button>
+          <button data-s="asc" aria-pressed="false">Most affordable</button>
+        </div>
+      </div>
+      <div class="tbl" style="margin-top:10px"><table id="rank"><thead><tr><th>#</th><th>Place</th><th class="r">Typical value</th><th class="r">Asking</th><th class="r">1-yr</th></tr></thead><tbody></tbody></table></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="maphead" style="margin:0">
+      <div><h2>Actual sale prices by metro area</h2><div class="hint">Median price homes sold for in <span id="saleM">the latest month</span>. Source: Zillow.</div></div>
+      <div class="seg" id="metroSort" role="group" aria-label="Sort metro areas">
+        <button data-s="size" aria-pressed="true">Largest</button>
+        <button data-s="desc" aria-pressed="false">Most expensive</button>
+        <button data-s="asc" aria-pressed="false">Most affordable</button>
+      </div>
+    </div>
+    <div class="searchrow"><input type="search" id="mq" placeholder="Filter by city or state, e.g. Dallas or FL" autocomplete="off"></div>
+    <div class="tbl"><table id="metros"><thead><tr><th>Metro area</th><th class="r">Median sale price</th><th class="r">1-yr</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <footer>
+    Data: Zillow Research (Zillow Home Value Index for homes in the middle third of prices, and metro median sale prices) and Realtor.com Residential Listings Database (asking prices of active listings). These figures cover homes, condos and townhomes; vacant land is not included, so use the "Land sold" links to see land sales. Some Connecticut and Alaska areas use new boundaries and may show no data on the map. This is not an appraisal.
+  </footer>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script src="lib/d3.min.js"></script>
+<script src="lib/topojson-client.min.js"></script>
+<script>
+const FIPS={"01":"AL","02":"AK","04":"AZ","05":"AR","06":"CA","08":"CO","09":"CT","10":"DE","11":"DC","12":"FL","13":"GA","15":"HI","16":"ID","17":"IL","18":"IN","19":"IA","20":"KS","21":"KY","22":"LA","23":"ME","24":"MD","25":"MA","26":"MI","27":"MN","28":"MS","29":"MO","30":"MT","31":"NE","32":"NV","33":"NH","34":"NJ","35":"NM","36":"NY","37":"NC","38":"ND","39":"OH","40":"OK","41":"OR","42":"PA","44":"RI","45":"SC","46":"SD","47":"TN","48":"TX","49":"UT","50":"VT","51":"VA","53":"WA","54":"WV","55":"WI","56":"WY"};
+const MLABEL={zv:"Typical home value",p:"Median asking price",ppsf:"Price per sq ft",yy:"1-year change",dom:"Days on market"};
+const $=s=>document.querySelector(s);
+const money=v=>v==null?"—":"$"+Math.round(v).toLocaleString("en-US");
+const short=v=>v==null?"—":v>=1e6?"$"+(v/1e6).toFixed(v>=1e7?0:2)+"M":"$"+Math.round(v/1e3)+"K";
+const pct=v=>v==null?"—":(v>0?"+":"")+(v*100).toFixed(1)+"%";
+const chg=v=>v==null?'<span class="chg muted">—</span>':`<span class="chg ${v>0?"up":"down"}">${v>0?"▲":"▼"} ${Math.abs(v*100).toFixed(1)}%</span>`;
+const fmt=(m,v)=>m==="p"||m==="zv"?money(v):m==="ppsf"?(v==null?"—":"$"+v):m==="yy"?pct(v):(v==null?"—":v+" days");
+const title=s=>s.replace(/\b\w/g,c=>c.toUpperCase()).replace(/, (\w\w)$/i,(_,a)=>", "+a.toUpperCase());
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+let metroSort="size",S,C,Z,M,topo,metric="zv",view=null,sel=null,sortDir="desc";
+const monthName=m=>new Date(Math.floor(m/100),m%100-1,1).toLocaleString("en-US",{month:"long",year:"numeric"});
+const addMonths=(m,k)=>{let y=Math.floor(m/100),mo=m%100-1+k;y+=Math.floor(mo/12);mo=((mo%12)+12)%12;return y*100+mo+1};
+
+Promise.all([fetch("data/summary.json").then(r=>r.json()),fetch("data/counties.json").then(r=>r.json()),fetch("data/map.json").then(r=>r.json())]).then(([s,c,t])=>{
+  S=s;C=c;topo=t;
+  $("#asof").textContent="Updated with "+monthName(S.month)+" data";$("#saleM").textContent=monthName(S.saleMonth);
+  renderStats();draw();showNational();renderRank();
+  fetch("data/metros.json").then(r=>r.json()).then(m=>{M=m;renderMetros()});
+  fetch("data/zips.json").then(r=>r.json()).then(z=>{Z=z;$("#q").value="Austin, TX";search();$("#q").value="";});
+}).catch(()=>{$("#detail").innerHTML='<div class="loading">The data could not load. Reload the page to try again.</div>'});
+
+function renderStats(){
+  const n=S.national;
+  $("#stats").innerHTML=[
+    ["US median sale price",money(S.sale.p),chg(S.sale.yy)+' <span class="muted" style="font-size:.78rem">sold, '+monthName(S.saleMonth)+'</span>'],
+    ["US median asking price",money(n.p),chg(n.yy)+' <span class="muted" style="font-size:.78rem">vs last year</span>'],
+    ["Homes for sale",n.n.toLocaleString("en-US"),""],
+    ["Median days on market",n.dom+" days",""],
+    ["Listings with price cuts",Math.round(n.red*100)+"%",""]
+  ].map(([k,v,x])=>`<div class="stat"><span class="eyebrow">${k}</span><span class="v num">${v}</span>${x?`<span>${x}</span>`:""}</div>`).join("");
+}
+
+function regions(){
+  if(!view) return topojson.feature(topo,topo.objects.states).features.map(f=>({f,id:FIPS[f.id],d:S.states[FIPS[f.id]],name:f.properties.name}));
+  const fips=Object.keys(FIPS).find(k=>FIPS[k]===view);
+  return topojson.feature(topo,{type:"GeometryCollection",geometries:topo.objects.counties.geometries.filter(g=>g.id.slice(0,2)===fips)}).features
+    .map(f=>({f,id:f.id,d:C[f.id],name:C[f.id]?title(C[f.id].name):f.properties.name+" County"}));
+}
+function scaleFor(list){
+  const vals=list.map(r=>r.d&&r.d[metric]).filter(v=>v!=null).sort(d3.ascending);
+  const range=[cssv("--s0"),cssv("--s1"),cssv("--s2"),cssv("--s3"),cssv("--s4")];
+  let dom;
+  if(metric==="yy"){const m=Math.max(.05,d3.quantile(vals,.95)||0,-(d3.quantile(vals,.05)||0));dom=[-m,m];
+    return {s:d3.scaleQuantize().domain(dom).range([cssv("--down"),cssv("--s1"),cssv("--s0"),cssv("--s2"),cssv("--up")]),dom};}
+  const q=[.2,.4,.6,.8].map(p=>d3.quantile(vals,p));
+  return {s:d3.scaleThreshold().domain(q).range(range),dom:q,vals};
+}
+function draw(){
+  const list=regions();const {s,dom}=scaleFor(list);
+  const path=d3.geoPath();const svg=d3.select("#map"),g=d3.select("#g");
+  g.selectAll("*").remove();
+  let tr="";
+  if(view){
+    const fc={type:"FeatureCollection",features:list.map(r=>r.f)};
+    const [[x0,y0],[x1,y1]]=path.bounds(fc);const k=Math.min(975/(x1-x0),610/(y1-y0))*.92;
+    tr=`translate(${975/2-k*(x0+x1)/2},${610/2-k*(y0+y1)/2}) scale(${k})`;
+    g.attr("data-k",k);
+  }
+  g.attr("transform",tr);
+  const k=view?+g.attr("data-k"):1;
+  g.selectAll("path.region").data(list).join("path").attr("class",r=>"region"+(sel&&sel.id===r.id?" sel":"")).attr("d",r=>path(r.f))
+    .attr("fill",r=>r.d&&r.d[metric]!=null?s(r.d[metric]):cssv("--nodata")).style("stroke-width",.6/k)
+    .attr("tabindex",0).attr("aria-label",r=>r.name+": "+fmt(metric,r.d&&r.d[metric]))
+    .on("mousemove",(e,r)=>{const t=$("#tip");t.hidden=false;t.innerHTML=`<b>${r.name}</b> · ${fmt(metric,r.d&&r.d[metric])}`;t.style.left=Math.min(e.clientX+12,innerWidth-t.offsetWidth-8)+"px";t.style.top=(e.clientY+14)+"px"})
+    .on("mouseleave",()=>$("#tip").hidden=true)
+    .on("click",(e,r)=>pick(r)).on("keydown",(e,r)=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();pick(r)}});
+  if(view){g.append("path").attr("class","border").style("stroke-width",1.4/k).attr("d",path(topojson.mesh(topo,topo.objects.states)))}
+  else g.append("path").attr("class","border").attr("d",path(topojson.mesh(topo,topo.objects.states,(a,b)=>a!==b)));
+  // legend
+  const cols=s.range();const labels=metric==="yy"?[pct(dom[0]),"0%",pct(dom[1])]:[fmt(metric,dom[0]).replace(" days",""),fmt(metric,dom[3])];
+  $("#legend").innerHTML=`<span>${MLABEL[metric]}</span><span>${metric==="yy"?"Falling":"Lower"}</span><span class="bar">${cols.map(c=>`<i style="background:${c}"></i>`).join("")}</span><span>${metric==="yy"?"Rising":"Higher"}</span><span class="mono">${metric==="yy"?`(${labels[0]} to ${labels[2]})`:`(20% under ${labels[0]} · 20% over ${labels[1]})`}</span>`;
+  // crumbs
+  $("#crumbs").innerHTML=view?`<button id="back">United States</button><span class="muted">›</span><strong>${S.states[view].name}</strong><span class="muted">· ${list.length} counties</span>`:`<strong>United States</strong><span class="muted">· click a state</span>`;
+  if(view)$("#back").onclick=()=>{view=null;sel=null;draw();showNational();renderRank()};
+}
+function pick(r){
+  $("#tip").hidden=true;
+  if(!view){view=r.id;sel=null;draw();showPlace(r.d,r.name,"state",r.id);renderRank();return}
+  sel=r;draw();showPlace(r.d,r.name,"county",r.id);
+  if(innerWidth<860)$("#detail").scrollIntoView({behavior:"smooth",block:"start"});
+}
+function showNational(){showPlace(Object.assign({},S.national,{zv:null}),"United States","nation",null)}
+function stName(ab){return S.states[ab]?S.states[ab].name:ab}
+function soldLinks(kind,name,id){
+  if(kind==="nation")return "";
+  const st=kind==="county"?FIPS[id.slice(0,2)]:id, sname=stName(st);
+  const cname=name.replace(/,.*$/,"").trim();
+  const isParish=st==="LA", suffix=isParish?"Parish":"County";
+  const zq=kind==="county"?`${cname} ${suffix} ${st}`:sname;
+  const rslug=kind==="county"?`${cname.replace(/\s+/g,"-")}-${suffix}_${st}`:sname.replace(/\s+/g,"-");
+  const lw=sname.toLowerCase().replace(/\s+/g,"-")+(kind==="county"?"/"+cname.toLowerCase().replace(/[^a-z]+/g,"-")+"-"+suffix.toLowerCase():"");
+  return `<div><div class="eyebrow" style="margin-bottom:6px">Recently sold properties (actual sale prices)</div><div class="links">
+    <a href="https://www.zillow.com/homes/recently_sold/${encodeURIComponent(zq)}_rb/" target="_blank" rel="noopener">Zillow sold</a>
+    <a href="https://www.realtor.com/realestateandhomes-search/${rslug}/show-recently-sold" target="_blank" rel="noopener">Realtor.com sold</a>
+    <a href="https://www.realtor.com/realestateandhomes-search/${rslug}/type-land/show-recently-sold" target="_blank" rel="noopener">Land sold</a>
+  </div></div>
+  <div><div class="eyebrow" style="margin-bottom:6px">For sale now</div><div class="links">
+    <a href="https://www.realtor.com/realestateandhomes-search/${rslug}" target="_blank" rel="noopener">Homes for sale</a>
+    <a href="https://www.landwatch.com/${lw}-land-for-sale" target="_blank" rel="noopener">Land for sale (LandWatch)</a>
+  </div></div>`;
+}
+function showPlace(d,name,kind,id){
+  const el=$("#detail");
+  if(!d){el.innerHTML=`<div><div class="eyebrow">${kind}</div><h2>${name}</h2></div><p class="muted">No price data for this area. Very small counties can be missing.</p>${soldLinks(kind,name,id)}`;return}
+  let sale=null,saleName="";
+  if(kind==="nation"){sale=S.sale;saleName="United States"}
+  else if(kind==="county"&&d.metro&&M){const sh=d.metro.split("-")[0].split(",")[0]+", "+d.metro.split(", ").pop().split("-")[0];const m=M.find(x=>x.name===d.metro)||M.find(x=>x.name===sh);if(m){sale=m;saleName=m.name+" metro"}}
+  const big=d.zv!=null?["Typical home value",d.zv,d.zvyy]:sale&&kind==="nation"?["Median sale price",sale.p,sale.yy]:["Median asking price",d.p,d.yy];
+  const rows=[];
+  if(kind==="nation")rows.push([`Median asking price <span class="muted">· ${monthName(S.month)}</span>`,d.p,d.yy]);
+  else{if(sale)rows.push([`Median sale price <span class="muted">· ${saleName}, ${monthName(S.saleMonth)}</span>`,sale.p,sale.yy]);
+    if(d.zv!=null&&d.p!=null)rows.push([`Median asking price <span class="muted">· ${monthName(S.month)}</span>`,d.p,d.yy]);}
+  const series=[];
+  if(kind==="nation"){series.push({h:S.sale.h,end:S.saleMonth,c:"var(--accent)",l:"Sale price"});series.push({h:S.nationalH.slice(-36),end:S.month,c:"var(--muted)",l:"Asking price"})}
+  else{const zh=kind==="county"?d.zh:(d.zh||[]).slice(-36);const ah=(d.h||[]).slice(-36);
+    if(zh&&zh.length)series.push({h:zh,end:S.zvMonth,c:"var(--accent)",l:"Typical value"});
+    if(sale)series.push({h:sale.h,end:S.saleMonth,c:"var(--up)",l:"Metro sale price"});
+    if(ah.length)series.push({h:ah,end:S.month,c:"var(--muted)",l:"Asking price"});}
+  el.innerHTML=`<div><div class="eyebrow">${kind==="nation"?"Nationwide":kind==="state"?"State":"County"}</div><h2>${name}</h2></div>
+  <div><div class="eyebrow" style="margin-bottom:2px">${kind==="nation"?"Median sale price":big[0]}</div><div class="price num">${money(kind==="nation"?S.sale.p:big[1])}</div><div>${chg(kind==="nation"?S.sale.yy:big[2])} <span class="muted" style="font-size:.85rem">vs last year</span></div></div>
+  ${rows.length?`<div class="kv">${rows.map(r=>`<div style="grid-column:1/-1"><span>${r[0]}</span><span class="num">${money(r[1])} ${chg(r[2])}</span></div>`).join("")}</div>`:""}
+  <div class="kv">
+    <div><span>Homes for sale</span><span class="num">${d.n!=null?d.n.toLocaleString("en-US"):"—"}</span></div>
+    <div><span>Asking price per sq ft</span><span class="num">${d.ppsf!=null?"$"+d.ppsf:"—"}</span></div>
+    <div><span>Typical size listed</span><span class="num">${d.sqft!=null?d.sqft.toLocaleString("en-US")+" sq ft":"—"}</span></div>
+    <div><span>Days on market</span><span class="num">${d.dom!=null?d.dom:"—"}</span></div>
+  </div>
+  <div><div class="eyebrow">Last 3 years</div><svg id="trend" role="img" aria-label="Price trend"></svg>
+  <div class="legend" style="margin-top:2px">${series.map(s=>`<span style="display:inline-flex;align-items:center;gap:5px"><i style="width:14px;height:3px;background:${s.c};display:inline-block;border-radius:2px"></i>${s.l}</span>`).join("")}</div></div>
+  ${soldLinks(kind,name,id)}`;
+  trend(series);
+}
+function trend(series){
+  const svg=d3.select("#trend");const W=svg.node().clientWidth||320,H=150,m={l:46,r:10,t:10,b:20};
+  svg.attr("viewBox",`0 0 ${W} ${H}`);
+  const dt=k=>new Date(Math.floor(k/100),k%100-1,1);
+  const all=series.map(s=>s.h.map((v,i)=>[addMonths(s.end,i-(s.h.length-1)),v]).filter(p=>p[1]!=null));
+  const flat=all.flat();if(flat.length<2)return;
+  const x=d3.scaleTime().domain(d3.extent(flat,p=>dt(p[0]))).range([m.l,W-m.r]);
+  const y=d3.scaleLinear().domain(d3.extent(flat,p=>p[1])).nice(4).range([H-m.b,m.t]);
+  y.ticks(4).forEach(t=>{svg.append("line").attr("class","grid").attr("x1",m.l).attr("x2",W-m.r).attr("y1",y(t)).attr("y2",y(t));svg.append("text").attr("x",m.l-6).attr("y",y(t)+4).attr("text-anchor","end").text(short(t))});
+  x.ticks(Math.min(4,Math.floor(W/80))).forEach(t=>svg.append("text").attr("x",x(t)).attr("y",H-4).attr("text-anchor","middle").text(t.getFullYear()));
+  all.forEach((pts,i)=>{if(pts.length<2)return;svg.append("path").attr("d",d3.line().x(p=>x(dt(p[0]))).y(p=>y(p[1]))(pts)).attr("fill","none").attr("stroke",series[i].c).attr("stroke-width",i===0?2.2:1.6);
+    const l=pts[pts.length-1];svg.append("circle").attr("r",3.5).attr("cx",x(dt(l[0]))).attr("cy",y(l[1])).style("fill",series[i].c)});
+}
+function renderMetros(){
+  const q=($("#mq").value||"").trim().toLowerCase();
+  const list=M.filter(m=>!q||m.name.toLowerCase().includes(q)).sort((a,b)=>metroSort==="size"?a.rank-b.rank:metroSort==="desc"?b.p-a.p:a.p-b.p);
+  $("#metros tbody").innerHTML=list.slice(0,150).map(m=>`<tr><td>${m.name}</td><td class="r">${money(m.p)}</td><td class="r">${chg(m.yy)}</td></tr>`).join("")||`<tr><td colspan="3" class="muted">No metro areas match. Try a city name like "Dallas".</td></tr>`;
+}
+function renderRank(){
+  const list=view?regions().filter(r=>r.d&&r.d.zv!=null):Object.entries(S.states).map(([id,d])=>({id,d,name:d.name}));
+  list.sort((a,b)=>sortDir==="desc"?b.d.zv-a.d.zv:a.d.zv-b.d.zv);
+  $("#rankTitle").textContent=view?`Counties in ${S.states[view].name}`:"States";
+  $("#rank tbody").innerHTML=list.slice(0,60).map((r,i)=>`<tr class="click" data-id="${r.id}" tabindex="0"><td class="muted">${i+1}</td><td>${r.name}</td><td class="r">${money(r.d.zv)}</td><td class="r">${money(r.d.p)}</td><td class="r">${chg(r.d.zvyy)}</td></tr>`).join("");
+  document.querySelectorAll("#rank tr.click").forEach(tr=>{const go=()=>{const r=regions().find(x=>x.id===tr.dataset.id);if(r)pick(r)};tr.onclick=go;tr.onkeydown=e=>{if(e.key==="Enter")go()}});
+}
+function search(){
+  if(!Z)return;const q=$("#q").value.trim().toLowerCase().replace(/\s+/g," ");
+  const tb=$("#zres tbody"),hint=$("#zhint");
+  if(!q){return}
+  let res;
+  if(/^\d{3,5}$/.test(q))res=Z.filter(z=>z[0].startsWith(q));
+  else{const parts=q.split(/,| (?=[a-z]{2}$)/).map(s=>s.trim()).filter(Boolean);const city=parts[0],stt=parts[1];
+    res=Z.filter(z=>{const [c,s]=z[1].split(", ");return c.startsWith(city)&&(!stt||s===stt)})}
+  res.sort((a,b)=>(b[4]||0)-(a[4]||0)||(b[7]||0)-(a[7]||0));
+  tb.innerHTML=res.slice(0,100).map(z=>`<tr><td class="mono">${z[0]}</td><td>${title(z[1])}</td><td class="r">${money(z[7])} ${chg(z[8])}</td><td class="r">${money(z[2])}</td><td class="r">${z[4]??"—"}</td><td><a class="sold" href="https://www.zillow.com/homes/recently_sold/${z[0]}_rb/" target="_blank" rel="noopener">Zillow</a> · <a class="sold" href="https://www.redfin.com/zipcode/${z[0]}/recently-sold" target="_blank" rel="noopener">Redfin</a></td></tr>`).join("");
+  hint.textContent=res.length?`${res.length.toLocaleString("en-US")} ZIP code${res.length>1?"s":""} found${res.length>100?", showing the 100 with the most listings":""}.`:"No ZIP codes match. Try a 5-digit ZIP or a city name like \"Denver\" or \"Portland, OR\".";
+}
+$("#mq").addEventListener("input",()=>M&&renderMetros());
+document.querySelectorAll("#metroSort button").forEach(b=>b.onclick=()=>{metroSort=b.dataset.s;document.querySelectorAll("#metroSort button").forEach(x=>x.setAttribute("aria-pressed",x===b));M&&renderMetros()});
+let qt;$("#q").addEventListener("input",()=>{clearTimeout(qt);qt=setTimeout(search,150)});
+document.querySelectorAll("#metric button").forEach(b=>b.onclick=()=>{metric=b.dataset.m;document.querySelectorAll("#metric button").forEach(x=>x.setAttribute("aria-pressed",x===b));draw()});
+document.querySelectorAll("#rankSort button").forEach(b=>b.onclick=()=>{sortDir=b.dataset.s;document.querySelectorAll("#rankSort button").forEach(x=>x.setAttribute("aria-pressed",x===b));renderRank()});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>S&&draw());
+new MutationObserver(()=>S&&draw()).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+</script>
+<script>
+if("serviceWorker" in navigator&&location.protocol!=="file:"){addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}))}
+</script>
+</body>
+</html>

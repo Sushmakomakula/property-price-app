@@ -1,0 +1,18 @@
+{
+  "name": "us-property-price-finder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "US home values, actual sale prices and asking prices by state, county, metro and ZIP.",
+  "scripts": {
+    "serve": "npx --yes http-server@14.1.1 www -p 8080 -c-1",
+    "sync": "npx cap sync android",
+    "android:build": "npx cap sync android && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/core": "^8.6.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2"
+  }
+}

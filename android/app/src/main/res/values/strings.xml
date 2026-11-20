@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Price Finder</string>
+    <string name="title_activity_main">Price Finder</string>
+    <string name="package_name">com.propertypricefinder.app</string>
+    <string name="custom_url_scheme">com.propertypricefinder.app</string>
+</resources>
