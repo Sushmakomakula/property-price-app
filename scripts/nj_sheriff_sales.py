@@ -239,6 +239,16 @@ def tax_record(street, town, county, mun=None):
             "building_desc": a.get("BLDG_DESC"), "lot_size": a.get("LAND_DESC"), "type": CLASS.get(str(a.get("PROP_CLASS") or ""), str(a.get("PROP_CLASS") or "")),
             "owner_mail": mail or None, "tax_address": f"{a.get('PROP_LOC')}, {a.get('MUN_NAME')}"}
 
+ASSOC = re.compile(r"CONDOMINIUM|\bCONDO\b|HOMEOWNERS?'? ASSOC|OWNERS'? ASSOC|COMMUNITY ASSOC|PROPERTY OWNERS|\bHOA\b|\bPOA\b|COUNCIL OF CO-?OWNERS|(?:VILLAS?|TOWNHOMES?|ESTATES|COMMONS|VILLAGE|GARDENS|TOWERS?|LANDING|POINTE?|CLUB)\b[^,]*\bASSOCIATION", re.I)
+def lien_note(r):
+    """Very low opening bids usually mean a junior lien is being foreclosed, and a larger mortgage may survive the sale."""
+    bid, pct = r.get("upset"), r.get("bid_pct_of_assessed")
+    if ASSOC.search(r.get("plaintiff") or ""):
+        return "Condo/HOA dues foreclosure: the main mortgage usually stays on the property"
+    if (bid and bid < 25000) or (pct is not None and pct < 0.15):
+        return "Very low opening bid: likely a second mortgage, home-equity loan or tax lien; a larger mortgage may stay on the property"
+    return None
+
 def main(path):
     from concurrent.futures import ThreadPoolExecutor
     allrows, report = [], {}
@@ -260,6 +270,7 @@ def main(path):
         except Exception: r["tax_record"] = None
         t = r["tax_record"]
         r["bid_pct_of_assessed"] = round(r["upset"] / t["assessed"], 3) if t and t.get("assessed") and r.get("upset") else None
+        r["lien_note"] = lien_note(r)
         return r
     if os.environ.get("NO_TAX") != "1":
         with ThreadPoolExecutor(max_workers=4) as ex: list(ex.map(add, allrows))
