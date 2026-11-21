@@ -75,9 +75,14 @@ def parse_detail(t):
             if re.match(r"\d{1,2}/\d{1,2}/\d{4}$", lines[i + 1].strip()): pairs.append((lines[i].strip(), lines[i + 1].strip()))
             else: break
         if pairs:
+            # Some counties list newest first (Monmouth), others oldest first (Bergen): put them in date order.
+            dt = lambda p: datetime.datetime.strptime(p[1], "%m/%d/%Y")
+            if len(pairs) > 1 and dt(pairs[0]) > dt(pairs[-1]): pairs.reverse()
             d["status"] = pairs[-1][0]
             d["adjournments"] = sum(1 for p in pairs if p[0].lower().startswith("adjourn"))
+            d["bankruptcies"] = sum(1 for p in pairs if "bankrupt" in p[0].lower())
             d["first_scheduled"] = pairs[0][1]
+            d["history"] = [f"{p[1]}: {p[0]}" for p in pairs]
     return d
 
 # ---- Official NJ tax records (NJ Office of GIS, MOD-IV) ----
@@ -168,7 +173,7 @@ def county_sales(cid, name):
             "county": name, "sheriff_no": rec.get("Sheriff #") or rec.get("Sheriff Number"),
             "sale_date": rec.get("Sales Date") or rec.get("Sale Date"), "address": addr, "street": street, "town": town, "zip": z, "municipality": mun,
             "plaintiff": rec.get("Plaintiff"), "defendant": rec.get("Defendant"),
-            "status": det.get("status"), "adjournments": det.get("adjournments"), "first_scheduled": det.get("first_scheduled"), "upset": det.get("upset"), "judgment": det.get("judgment"),
+            "status": det.get("status"), "adjournments": det.get("adjournments"), "bankruptcies": det.get("bankruptcies"), "first_scheduled": det.get("first_scheduled"), "history": det.get("history"), "upset": det.get("upset"), "judgment": det.get("judgment"),
             "occupancy": det.get("occupancy"), "block_lot": det.get("block_lot"), "dimensions": det.get("dimensions"),
             "attorney": det.get("attorney"), "attorney_phone": det.get("attorney_phone"),
             "list_url": f"{BASE}/Sales/SalesSearch?countyId={cid}"})
