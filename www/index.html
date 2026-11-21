@@ -163,6 +163,16 @@ footer a{color:var(--accent)}
     <div id="addrOut"></div>
   </section>
 
+
+  <section class="card lookup" aria-label="All properties in an area">
+    <div><h2>All properties in an area</h2><div class="hint">Type a ZIP code or a town and state to list every property with its official value and sale record, then download it as an Excel file. Works in Connecticut, Maryland, Massachusetts, New Jersey, North Carolina and Wisconsin.</div></div>
+    <form id="areaForm">
+      <input type="search" id="areaQ" placeholder="e.g. 01602, or West Hartford, CT" aria-label="ZIP code or town and state">
+      <button class="btn" id="areaBtn" type="submit">Show properties</button>
+    </form>
+    <div id="areaOut"></div>
+  </section>
+
   <section class="stats" id="stats" aria-label="National summary"></section>
 
   <div class="main">
@@ -534,6 +544,124 @@ async function loadParcel(p,typed){
 }
 $("#addrForm").addEventListener("submit",e=>{e.preventDefault();lookup($("#addr").value)});
 showRecent();
+
+</script>
+<script src="area.js"></script>
+<script>
+// ---- All properties in an area (table + Excel download) ----
+let areaData=null,areaShown=200,areaCtl=null;
+const AREA_ST_NAMES=()=>AREA.states.map(a=>S&&S.states[a]?S.states[a].name:a).join(", ");
+const stFromText=t=>{t=(t||"").trim();if(/^[A-Za-z]{2}$/.test(t))return t.toUpperCase();return ST_NAME_TO_AB[t.replace(/\b\w/g,c=>c.toUpperCase())]||""};
+async function resolveArea(q){
+  q=q.trim();
+  const zm=q.match(/^(\d{5})$/);
+  if(zm){
+    const zip=zm[1];let st="",zipTown="",lat=null,lon=null;
+    const z=Z&&Z.find(x=>x[0]===zip);
+    if(z){const parts=z[1].split(", ");st=(parts[1]||"").toUpperCase();zipTown=parts[0]}
+    try{const r=await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=us&limit=1&postalcode="+zip);const h=(await r.json())[0];
+      if(h){lat=+h.lat;lon=+h.lon;const a=h.address||{};if(!st)st=(a["ISO3166-2-lvl4"]||"").replace("US-","");if(!zipTown)zipTown=a.city||a.town||a.village||""}}catch(e){}
+    return {zip,st,zipTown,lat,lon};
+  }
+  const m=q.split(",").map(s=>s.trim()).filter(Boolean);
+  if(m.length<2)return {error:'Type a 5-digit ZIP code, or a town and state like "West Hartford, CT".'};
+  return {town:m[0],st:stFromText(m[m.length-1])};
+}
+async function loadArea(){
+  const out=$("#areaOut"),btn=$("#areaBtn"),q=$("#areaQ").value;
+  if(!q.trim())return;
+  if(areaCtl)areaCtl.abort();
+  const ctl=areaCtl=new AbortController();
+  btn.disabled=true;out.innerHTML='<p class="muted">Finding the area…</p>';
+  try{
+    const a=await resolveArea(q);
+    if(a.error){out.innerHTML=`<div class="warn">${esc(a.error)}</div>`;return}
+    if(!a.st){out.innerHTML='<div class="warn">That place was not found. Check the ZIP code, or add the state, like "Madison, WI".</div>';return}
+    if(!AREA.states.includes(a.st)){
+      const nm=S&&S.states[a.st]?S.states[a.st].name:a.st;
+      out.innerHTML=`<div class="warn">${a.st==="TX"?"Texas's free records service only answers one property at a time, so it can't list a whole area. Use “Look up any property” for single Texas addresses.":`${esc(nm)} doesn't publish free property-by-property records.`} Area lists and Excel downloads work in ${esc(AREA_ST_NAMES())}.</div>`;return}
+    out.innerHTML='<p class="muted" id="areaProg">Counting properties…</p><button class="btn" type="button" id="areaCancel" style="background:var(--muted)">Cancel</button>';
+    $("#areaCancel").onclick=()=>ctl.abort();
+    const res=await AREA.fetchArea(a,(n,t)=>{const el=$("#areaProg");if(el)el.textContent=`Loaded ${n.toLocaleString("en-US")} of ${t.toLocaleString("en-US")} properties…`},ctl.signal);
+    if(ctl!==areaCtl)return;
+    if(!res||res.error){out.innerHTML=`<div class="warn">${esc(res?res.error:"Not available")}</div>`;return}
+    if(!res.rows.length){out.innerHTML='<div class="warn">No properties were found for that area. For towns, use the official town name; for ZIP codes, check the number.</div>';return}
+    areaData={...res,st:a.st,name:a.zip?("ZIP "+a.zip):a.town};areaShown=200;renderArea();
+  }catch(e){console.error("area lookup failed",e);if(e.message==="cancelled"||ctl.signal.aborted){out.innerHTML='<p class="muted">Cancelled.</p>';return}
+    out.innerHTML='<div class="warn">The state records service did not respond. Try again in a minute.</div>'}
+  finally{if(ctl===areaCtl)btn.disabled=false}
+}
+const median=a=>{a=a.filter(x=>x>0).sort((x,y)=>x-y);if(!a.length)return null;const m=a.length>>1;return a.length%2?a[m]:(a[m-1]+a[m])/2};
+const headVal=r=>{const v=(r.values||[]).find(x=>x[1]);return v?v[1]:null};
+function areaRows(){
+  const f=($("#areaFilter")?.value||"").trim().toUpperCase();
+  let rows=areaData.rows;
+  if(f)rows=rows.filter(r=>(r.address+" "+(r.owner||"")).toUpperCase().includes(f));
+  const s=$("#areaSort")?.value||"value-desc";
+  const sd=r=>r.sale&&r.sale.date&&!isNaN(r.sale.date)?+r.sale.date:0;
+  const cmp={"value-desc":(a,b)=>(headVal(b)||0)-(headVal(a)||0),"value-asc":(a,b)=>(headVal(a)||Infinity)-(headVal(b)||Infinity),
+    "sale-recent":(a,b)=>sd(b)-sd(a),"sale-price":(a,b)=>((b.sale&&b.sale.price)||0)-((a.sale&&a.sale.price)||0),
+    "address":(a,b)=>a.address.localeCompare(b.address,undefined,{numeric:true})}[s];
+  return [...rows].sort(cmp);
+}
+function renderArea(){
+  const d=areaData,out=$("#areaOut");
+  const vals=d.rows.map(headVal);
+  const since=Date.now()-3*365*864e5;
+  const recent=d.rows.filter(r=>r.sale&&r.sale.price>=10000&&r.sale.date&&+r.sale.date>since).map(r=>r.sale.price); // skips $1 family/government transfers
+  const vt=(d.rows.find(r=>headVal(r))||{values:[["Value"]]}).values.find(x=>x[1])?.[0]||"Value";
+  const hasSale=d.rows.some(r=>r.sale&&r.sale.price);
+  const filterVal=$("#areaFilter")?.value||"",sortVal=$("#areaSort")?.value||"value-desc";
+  out.innerHTML=`<div class="areactx" style="margin-bottom:12px">
+      <div><span>Properties</span><span class="num">${d.rows.length.toLocaleString("en-US")}${d.capped?` of ${d.total.toLocaleString("en-US")}`:""}</span></div>
+      <div><span>Median ${esc(vt.toLowerCase())}</span><span class="num">${money(median(vals))}</span></div>
+      ${hasSale?`<div><span>Median sale price, last 3 years</span><span class="num">${recent.length?money(median(recent))+` <span class="muted" style="font-weight:400">(${recent.length.toLocaleString("en-US")} sales)</span>`:"—"}</span></div>`:""}
+    </div>
+    ${d.capped?`<div class="warn" style="margin-bottom:10px">This area has ${d.total.toLocaleString("en-US")} properties; the first ${AREA.MAX.toLocaleString("en-US")} are loaded. Use a ZIP code or smaller town to see all of them.</div>`:""}
+    <div class="searchrow" style="flex-wrap:wrap">
+      <input type="search" id="areaFilter" placeholder="Filter by street or owner" value="${esc(filterVal)}" style="flex:1 1 200px">
+      <select id="areaSort" aria-label="Sort properties" style="font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
+        <option value="value-desc">Highest value</option><option value="value-asc">Lowest value</option>
+        ${hasSale?'<option value="sale-recent">Most recent sale</option><option value="sale-price">Highest sale price</option>':""}
+        <option value="address">Address</option></select>
+      <button class="btn" type="button" id="areaXlsx">Download Excel file</button>
+    </div>
+    <div id="areaDl" class="hint"></div>
+    <div class="tbl" style="max-height:560px"><table><thead><tr><th>Address</th><th>Owner</th><th class="r">${esc(vt)}</th>${hasSale?'<th class="r">Last sale</th><th>Sale date</th>':""}<th class="r">Built</th><th class="r">Sq ft</th></tr></thead><tbody id="areaBody"></tbody></table></div>
+    <div id="areaMore"></div>
+    <div class="hint" style="margin-top:8px">Source: ${esc(d.provider.name)}. Public tax records.</div>`;
+  $("#areaSort").value=sortVal;
+  $("#areaFilter").addEventListener("input",()=>{areaShown=200;fillArea()});
+  $("#areaSort").addEventListener("change",()=>{areaShown=200;fillArea()});
+  $("#areaXlsx").onclick=downloadXlsx;
+  fillArea();
+}
+function fillArea(){
+  const rows=areaRows(),hasSale=areaData.rows.some(r=>r.sale&&r.sale.price);
+  $("#areaBody").innerHTML=rows.slice(0,areaShown).map(r=>`<tr><td>${esc(r.address)}</td><td>${esc(r.owner||"")}</td><td class="r">${money(headVal(r))}</td>${hasSale?`<td class="r">${r.sale&&r.sale.price?money(r.sale.price):"—"}</td><td>${r.sale?fmtDate(r.sale.date):""}</td>`:""}<td class="r">${r.yearBuilt||""}</td><td class="r">${r.livingArea?r.livingArea.toLocaleString("en-US"):""}</td></tr>`).join("");
+  $("#areaMore").innerHTML=rows.length>areaShown?`<button class="btn" type="button" id="areaMoreBtn" style="margin-top:8px;background:var(--muted)">Show more (${(rows.length-areaShown).toLocaleString("en-US")} left)</button>`:`<div class="hint" style="margin-top:6px">${rows.length.toLocaleString("en-US")} properties shown.</div>`;
+  const mb=$("#areaMoreBtn");if(mb)mb.onclick=()=>{areaShown+=500;fillArea()};
+}
+function loadScript(src){return new Promise((ok,no)=>{if(window.XLSX)return ok();const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
+async function downloadXlsx(){
+  const msg=$("#areaDl");
+  const native=window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform();
+  if(native){msg.innerHTML='Downloads don\'t work inside the Android app. Open <a href="https://sushmakomakula.github.io/property-price-app/" target="_blank" rel="noopener">the website</a> in Chrome to download the Excel file.';return}
+  msg.textContent="Preparing the Excel file…";
+  try{
+    await loadScript("lib/xlsx.mini.min.js");
+    const rows=areaRows().map(AREA.toRow);
+    const ws=XLSX.utils.json_to_sheet(rows);
+    ws["!cols"]=Object.keys(rows[0]).map(k=>({wch:Math.min(40,Math.max(10,k.length+2,...rows.slice(0,200).map(r=>String(r[k]).length)))}));
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Properties");
+    const about=XLSX.utils.aoa_to_sheet([["Area",areaData.name],["State",areaData.st],["Properties",rows.length],["Source",areaData.provider.name],["Downloaded",new Date().toISOString().slice(0,10)],["Note","Public tax records. Values are set for property tax and can differ from market price."]]);
+    XLSX.utils.book_append_sheet(wb,about,"About");
+    const fname=`Properties ${areaData.name.replace(/[^\w ,.-]/g,"")} ${areaData.st}.xlsx`;
+    XLSX.writeFile(wb,fname);
+    msg.textContent=`Downloaded “${fname}” (${rows.length.toLocaleString("en-US")} properties). Check your Downloads folder.`;
+  }catch(e){msg.textContent="The Excel file could not be created. Try again, or use a smaller area."}
+}
+$("#areaForm").addEventListener("submit",e=>{e.preventDefault();loadArea()});
 
 </script>
 <script>
