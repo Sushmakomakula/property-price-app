@@ -129,6 +129,9 @@ footer a{color:var(--accent)}
 .choices button:hover,.choices button:focus-visible{border-color:var(--accent)}
 .recent{display:flex;flex-wrap:wrap;gap:6px;font-size:.82rem;align-items:center}
 .recent button{all:unset;cursor:pointer;color:var(--accent);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+.parcel:empty{display:none}
+.parcel{border-top:1px solid var(--line);padding-top:12px}
+.parcel .price{font-family:var(--f-display);font-size:2rem;font-weight:800;line-height:1.1}
 .areactx{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
 .areactx div{border-top:1px solid var(--line);padding-top:6px;display:flex;flex-direction:column}
 .areactx span:first-child{font-size:.75rem;color:var(--muted)}
@@ -151,7 +154,7 @@ footer a{color:var(--accent)}
 
 
   <section class="card lookup" aria-label="Look up a property">
-    <div><h2>Look up any property</h2><div class="hint">Type a full US street address to see that property's value, sale history and official county records.</div></div>
+    <div><h2>Look up any property</h2><div class="hint">Type a full US street address. In Texas, North Carolina, New Jersey, Massachusetts, Maryland, Wisconsin and Connecticut the app shows the official value, owner and sale record. Everywhere else it links to that property's records.</div></div>
     <form id="addrForm">
       <input type="search" id="addr" placeholder="e.g. 1100 Congress Ave, Austin, TX 78701" autocomplete="street-address" aria-label="Street address">
       <button class="btn" id="addrBtn" type="submit">Look up</button>
@@ -403,6 +406,7 @@ document.querySelectorAll("#rankSort button").forEach(b=>b.onclick=()=>{sortDir=
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>S&&draw());
 new MutationObserver(()=>S&&draw()).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
 </script>
+<script src="parcels.js"></script>
 <script>
 // ---- Property lookup: any US address -> county + links to that property's records ----
 const NONDISCLOSURE=new Set(["TX","UT","NM","WY","ID","MT","ND","KS","MS","AK","LA","MO"]);
@@ -429,7 +433,8 @@ async function lookup(q){
     if(!r.ok)throw new Error(r.status);
     const hits=(await r.json()).filter(h=>h.address);
     if(!hits.length){renderProp(null,q);return}
-    const exact=hits.filter(h=>h.address.house_number);
+    const seen=new Set();
+    const exact=hits.filter(h=>h.address.house_number).filter(h=>{const k=[h.address.house_number,h.address.road,(h.address.postcode||"").slice(0,5)].join("|").toLowerCase();if(seen.has(k))return false;seen.add(k);return true});
     const list=exact.length?exact:hits;
     if(list.length>1&&!(exact.length===1)){
       out.innerHTML=`<p class="muted">Several places match. Pick one:</p><div class="choices">${list.map((h,i)=>`<button type="button" data-i="${i}">${esc(h.display_name)}</button>`).join("")}</div>`;
@@ -446,8 +451,10 @@ function renderProp(p,q,keep){
   const zslug=full.replace(/[#,]/g," ").trim().replace(/\s+/g,"-");
   saveRecent(typed);
   const stName=p&&S&&S.states[p.st]?S.states[p.st].name:(p?p.st:"");
-  const cTxt=p&&p.county?`${p.county} County, ${stName}`:"";
+  const cLabel=p?(p.countyFull||(p.county?p.county+" County":"")):"";
+  const cTxt=cLabel?`${cLabel}, ${stName}`:"";
   const cParish=p&&p.st==="LA"?"Parish":"County";
+  const cName=p?(p.countyFull||p.county+" "+cParish):"";
   const netr=p&&p.st?`https://publicrecords.netronline.com/state/${p.st}/county/${p.county.toLowerCase().replace(/[^a-z]+/g,"_").replace(/^_|_$/g,"")}`:"";
   let ctx="";
   if(p){
@@ -467,6 +474,7 @@ function renderProp(p,q,keep){
     <div><div class="eyebrow">${p?(p.exact?"Property found":"Closest match (house number not on the map; links use the address you typed)"):"Address not found on the map; links use the address you typed"}</div>
       <h3>${esc(p&&p.exact?p.street:typed)}</h3>
       ${p?`<div class="where">${esc([p.city,cTxt,p.zip].filter(Boolean).join(" · "))}</div>`:""}</div>
+    <div class="parcel" id="parcelBox"></div>
     ${nd}
     <div><div class="eyebrow" style="margin-bottom:6px">Value and sold price for this property</div><div class="linkgrid">
       <a href="https://www.zillow.com/homes/${encodeURIComponent(zslug)}_rb/" target="_blank" rel="noopener"><b>Zillow</b><span>Zestimate, tax value, price and sale history</span></a>
@@ -474,13 +482,55 @@ function renderProp(p,q,keep){
       <a href="${g(full+" realtor.com")}" target="_blank" rel="noopener"><b>Realtor.com</b><span>Estimate, sold price and tax history</span></a>
     </div></div>
     ${p&&p.county?`<div><div class="eyebrow" style="margin-bottom:6px">Official county records (appraised value, owner, deeds)</div><div class="linkgrid">
-      <a href="${g(`${p.county} ${cParish} ${stName} property appraiser assessor search`)}" target="_blank" rel="noopener"><b>${esc(p.county)} ${cParish} property search</b><span>Finds the county's official appraisal / assessor site</span></a>
-      <a href="${g(`${p.county} ${cParish} ${stName} recorder of deeds search`)}" target="_blank" rel="noopener"><b>Deeds and sale records</b><span>County recorder or clerk</span></a>
-      <a href="${netr}" target="_blank" rel="noopener"><b>County records directory</b><span>All public-record sites for ${esc(p.county)} ${cParish}</span></a>
+      <a href="${g(`${cName} ${stName} property appraiser assessor search`)}" target="_blank" rel="noopener"><b>${esc(cName)} property search</b><span>Finds the county's official appraisal / assessor site</span></a>
+      <a href="${g(`${cName} ${stName} recorder of deeds search`)}" target="_blank" rel="noopener"><b>Deeds and sale records</b><span>County recorder or clerk</span></a>
+      <a href="${netr}" target="_blank" rel="noopener"><b>County records directory</b><span>All public-record sites for ${esc(cName)}</span></a>
     </div></div>`:""}
     ${ctx}
     <div class="hint">These open other websites. Official appraised values come from the county; estimates from Zillow and Redfin are not appraisals.</div>
   </div>`;
+  loadParcel(p,typed);
+}
+const fmtDate=d=>d&&!isNaN(d)?d.toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"}):"";
+const STATE_LIST=()=>window.PARCELS.states.map(a=>S&&S.states[a]?S.states[a].name:a).join(", ");
+let parcelReq=0;
+async function loadParcel(p,typed){
+  const box=$("#parcelBox");if(!box)return;
+  if(!p||!window.PARCELS){box.innerHTML="";return}
+  if(!PARCELS.states.includes(p.st)){
+    box.innerHTML=`<div class="warn">Official property details inside the app are available for ${esc(STATE_LIST())}. For ${esc(S&&S.states[p.st]?S.states[p.st].name:p.st)}, use the buttons below to see this property's value and sale history.</div>`;return}
+  const id=++parcelReq;
+  box.innerHTML='<p class="muted">Getting official property records…</p>';
+  let res;
+  try{res=await PARCELS.lookupParcel(p.st,p.lon,p.lat,typed)}
+  catch(e){if(id===parcelReq)box.innerHTML='<div class="warn">The state property-records service did not respond. Try again in a minute, or use the county buttons below.</div>';return}
+  if(id!==parcelReq)return;
+  if(!res||!res.record){box.innerHTML=`<div class="warn">No official record was found at this exact spot. Check the house number, or use the county buttons below.</div>`;return}
+  const r=res.record;
+  const vals=r.values.filter(v=>v[1]);
+  const head=vals[0];
+  const facts=[
+    ["Owner",r.owner],["Year built",r.yearBuilt],["Living area",r.livingArea?r.livingArea.toLocaleString("en-US")+" sq ft":""],
+    ["Bedrooms",r.beds],["Bathrooms",r.baths],["Rooms",r.rooms],["Lot size",r.lotAcres?(+r.lotAcres).toFixed(r.lotAcres<1?3:2)+" acres":(r.lotSize||"")],
+    ["Property type",r.use],["Style",r.style],["Building",r.building],["Condition",r.condition],["Zoning",r.zoning],["County",r.county],
+    ["Parcel / account ID",r.id],["Deed",r.deed],["Legal description",r.legal]
+  ].filter(f=>f[1]!==null&&f[1]!==undefined&&f[1]!=="");
+  const sale=r.sale&&(r.sale.price||r.sale.date)?r.sale:null;
+  const prior=r.prior&&(r.prior.price||r.prior.date)?r.prior:null;
+  box.innerHTML=`<div class="eyebrow" style="margin-bottom:6px">Official property record${r.valueYear?" · "+esc(r.valueYear):""}</div>
+    ${!res.exact?`<div class="warn" style="margin-bottom:8px">This record is for <strong>${esc(r.address)}</strong>, the parcel at this spot on the map. If that isn't your address, the map may not know this house number yet.</div>`:""}
+    ${res.count>1?`<div class="hint" style="margin-bottom:6px">${res.count} records share this address (for example condos or units). Showing the first one.</div>`:""}
+    ${head?`<div class="price num">${money(head[1])}</div><div class="muted" style="font-size:.85rem;margin-bottom:10px">${esc(head[0])}</div>`:`<p class="muted">No value is listed for this property.</p>`}
+    <div class="kv">
+      ${vals.slice(1).map(v=>`<div><span>${esc(v[0])}</span><span class="num">${money(v[1])}</span></div>`).join("")}
+      ${sale?`${r.noPrice?"":`<div><span>Last sale price</span><span class="num">${sale.price?money(sale.price):"Not recorded"}</span></div>`}<div><span>Last sale date</span><span class="num">${fmtDate(sale.date)||"—"}</span></div>`:""}
+      ${prior?`<div><span>Previous sale</span><span class="num">${prior.price?money(prior.price):"—"}${prior.date?" · "+fmtDate(prior.date):""}</span></div>`:""}
+      ${facts.map(f=>`<div><span>${esc(f[0])}</span><span>${esc(f[1])}</span></div>`).join("")}
+    </div>
+    ${r.noSale?`<div class="hint" style="margin-top:8px">${esc(r.noSale)}</div>`:""}
+    ${r.note?`<div class="hint" style="margin-top:4px">${esc(r.note)}</div>`:""}
+    ${r.link?`<div class="links" style="margin-top:10px"><a href="${esc(r.link)}" target="_blank" rel="noopener">Full official record</a></div>`:""}
+    <div class="hint" style="margin-top:8px">Source: ${esc(r.source?r.source+" · ":"")}${esc(res.provider.name)}. Public tax records; values are set for property tax and can differ from market price.</div>`;
 }
 $("#addrForm").addEventListener("submit",e=>{e.preventDefault();lookup($("#addr").value)});
 showRecent();

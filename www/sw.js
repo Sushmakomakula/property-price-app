@@ -1,9 +1,9 @@
 // Caches the app and its data so it opens fast and works offline.
 // Bump VERSION whenever the data files are refreshed.
-const VERSION = "v2026-10-b";
+const VERSION = "v2026-10-c";
 const FILES = [
   "./", "index.html", "manifest.webmanifest",
-  "lib/d3.min.js", "lib/topojson-client.min.js",
+  "lib/d3.min.js", "lib/topojson-client.min.js", "parcels.js",
   "data/summary.json", "data/counties.json", "data/zips.json", "data/metros.json", "data/map.json",
   "icons/icon-192.png", "icons/icon-512.png"
 ];
@@ -17,6 +17,8 @@ self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) {
+    // Live lookups (address search, property records) always go to the network.
+    if (!url.hostname.endsWith("googleapis.com") && !url.hostname.endsWith("gstatic.com")) return;
     // Google Fonts: try the network, fall back to cache.
     e.respondWith(fetch(e.request).then(r => { const copy = r.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); return r; }).catch(() => caches.match(e.request)));
     return;
