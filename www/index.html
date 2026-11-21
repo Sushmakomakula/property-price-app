@@ -108,6 +108,31 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--accent-soft)}
 footer{font-size:.8rem;color:var(--muted);max-width:80ch}
 footer a{color:var(--accent)}
 .loading{padding:40px;text-align:center;color:var(--muted)}
+
+.lookup{display:flex;flex-direction:column;gap:12px}
+.lookup form{display:flex;gap:8px;flex-wrap:wrap}
+.lookup input{flex:1 1 260px;min-width:0;font:inherit;font-size:1rem;padding:11px 14px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+.lookup input:focus-visible,.btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.btn{font:600 .95rem var(--f-body);padding:11px 18px;border-radius:10px;border:0;background:var(--accent);color:var(--surface);cursor:pointer}
+.btn[disabled]{opacity:.6;cursor:wait}
+.prop{border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:14px}
+.prop h3{font-size:1.25rem}
+.prop .where{color:var(--muted);font-size:.9rem}
+.linkgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.linkgrid a{display:flex;flex-direction:column;gap:2px;text-decoration:none;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg)}
+.linkgrid a:hover{border-color:var(--accent)}
+.linkgrid a b{color:var(--accent);font-size:.95rem}
+.linkgrid a span{font-size:.8rem;color:var(--muted)}
+.warn{background:var(--accent-soft);border-radius:8px;padding:8px 12px;font-size:.85rem}
+.choices{display:flex;flex-direction:column;gap:6px}
+.choices button{all:unset;cursor:pointer;padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:.9rem}
+.choices button:hover,.choices button:focus-visible{border-color:var(--accent)}
+.recent{display:flex;flex-wrap:wrap;gap:6px;font-size:.82rem;align-items:center}
+.recent button{all:unset;cursor:pointer;color:var(--accent);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+.areactx{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.areactx div{border-top:1px solid var(--line);padding-top:6px;display:flex;flex-direction:column}
+.areactx span:first-child{font-size:.75rem;color:var(--muted)}
+.areactx span:last-child{font-weight:600}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -118,11 +143,22 @@ footer a{color:var(--accent)}
     <div>
       <div class="eyebrow" id="asof">Market data</div>
       <h1>US Property Price Finder</h1>
-      <p>See what homes and property sell for in every state, county, metro area and ZIP code, and find recently sold properties and land. Click a state on the map to see its counties.</p>
+      <p>Look up any US property by address, or see what homes sell for in every state, county, metro area and ZIP code. Click a state on the map to see its counties.</p>
     </div>
   </header>
 
   <div class="notice"><b>Three prices</b><span><strong>Typical value</strong> is what a middle-of-the-market home is worth, worked out from real sales (Zillow). <strong>Median sale price</strong> is what homes actually sold for, by metro area (Zillow). <strong>Asking price</strong> is what sellers list for now (Realtor.com). Use the <strong>Recently sold</strong> links to see individual properties, including land, and their sold prices.</span></div>
+
+
+  <section class="card lookup" aria-label="Look up a property">
+    <div><h2>Look up any property</h2><div class="hint">Type a full US street address to see that property's value, sale history and official county records.</div></div>
+    <form id="addrForm">
+      <input type="search" id="addr" placeholder="e.g. 1100 Congress Ave, Austin, TX 78701" autocomplete="street-address" aria-label="Street address">
+      <button class="btn" id="addrBtn" type="submit">Look up</button>
+    </form>
+    <div class="recent" id="recent" hidden></div>
+    <div id="addrOut"></div>
+  </section>
 
   <section class="stats" id="stats" aria-label="National summary"></section>
 
@@ -366,6 +402,89 @@ document.querySelectorAll("#metric button").forEach(b=>b.onclick=()=>{metric=b.d
 document.querySelectorAll("#rankSort button").forEach(b=>b.onclick=()=>{sortDir=b.dataset.s;document.querySelectorAll("#rankSort button").forEach(x=>x.setAttribute("aria-pressed",x===b));renderRank()});
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>S&&draw());
 new MutationObserver(()=>S&&draw()).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+</script>
+<script>
+// ---- Property lookup: any US address -> county + links to that property's records ----
+const NONDISCLOSURE=new Set(["TX","UT","NM","WY","ID","MT","ND","KS","MS","AK","LA","MO"]);
+const ST_NAME_TO_AB=Object.fromEntries(Object.entries({AL:"Alabama",AK:"Alaska",AZ:"Arizona",AR:"Arkansas",CA:"California",CO:"Colorado",CT:"Connecticut",DE:"Delaware",DC:"District of Columbia",FL:"Florida",GA:"Georgia",HI:"Hawaii",ID:"Idaho",IL:"Illinois",IN:"Indiana",IA:"Iowa",KS:"Kansas",KY:"Kentucky",LA:"Louisiana",ME:"Maine",MD:"Maryland",MA:"Massachusetts",MI:"Michigan",MN:"Minnesota",MS:"Mississippi",MO:"Missouri",MT:"Montana",NE:"Nebraska",NV:"Nevada",NH:"New Hampshire",NJ:"New Jersey",NM:"New Mexico",NY:"New York",NC:"North Carolina",ND:"North Dakota",OH:"Ohio",OK:"Oklahoma",OR:"Oregon",PA:"Pennsylvania",RI:"Rhode Island",SC:"South Carolina",SD:"South Dakota",TN:"Tennessee",TX:"Texas",UT:"Utah",VT:"Vermont",VA:"Virginia",WA:"Washington",WV:"West Virginia",WI:"Wisconsin",WY:"Wyoming"}).map(([a,n])=>[n,a]));
+const esc=t=>String(t??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const g=q=>"https://www.google.com/search?q="+encodeURIComponent(q);
+function loadRecent(){try{return JSON.parse(localStorage.getItem("recentAddr")||"[]")}catch(e){return[]}}
+function saveRecent(a){try{const r=[a,...loadRecent().filter(x=>x!==a)].slice(0,6);localStorage.setItem("recentAddr",JSON.stringify(r))}catch(e){}showRecent()}
+function showRecent(){const r=loadRecent(),el=$("#recent");if(!r.length){el.hidden=true;return}
+  el.hidden=false;el.innerHTML='<span class="muted">Recent:</span>'+r.map(a=>`<button type="button">${esc(a)}</button>`).join("");
+  el.querySelectorAll("button").forEach((b,i)=>b.onclick=()=>{$("#addr").value=r[i];lookup(r[i])});}
+function parseHit(h){
+  const a=h.address||{};const st=(a["ISO3166-2-lvl4"]||"").replace("US-","")||ST_NAME_TO_AB[a.state]||"";
+  const county=(a.county||a.city||"").replace(/ (County|Parish|Borough|Census Area|Municipality)$/,"");
+  const street=[a.house_number,a.road].filter(Boolean).join(" ");
+  const city=a.city||a.town||a.village||a.hamlet||a.suburb||"";
+  return {street,city,county,countyFull:a.county||"",st,zip:(a.postcode||"").slice(0,5),exact:!!a.house_number,lat:h.lat,lon:h.lon,display:h.display_name};
+}
+async function lookup(q){
+  q=q.trim();if(!q)return;
+  const out=$("#addrOut"),btn=$("#addrBtn");btn.disabled=true;out.innerHTML='<p class="muted">Finding the address…</p>';
+  try{
+    const r=await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=us&limit=5&q="+encodeURIComponent(q),{headers:{"Accept-Language":"en"}});
+    if(!r.ok)throw new Error(r.status);
+    const hits=(await r.json()).filter(h=>h.address);
+    if(!hits.length){renderProp(null,q);return}
+    const exact=hits.filter(h=>h.address.house_number);
+    const list=exact.length?exact:hits;
+    if(list.length>1&&!(exact.length===1)){
+      out.innerHTML=`<p class="muted">Several places match. Pick one:</p><div class="choices">${list.map((h,i)=>`<button type="button" data-i="${i}">${esc(h.display_name)}</button>`).join("")}</div>`;
+      out.querySelectorAll(".choices button").forEach(b=>b.onclick=()=>renderProp(parseHit(list[+b.dataset.i]),q));
+    }else renderProp(parseHit(list[0]),q);
+  }catch(e){out.innerHTML='<p class="warn">The address service is not responding. Check your internet connection and try again in a few seconds.</p>';renderProp(null,q,true)}
+  finally{btn.disabled=false}
+}
+function renderProp(p,q,keep){
+  const out=$("#addrOut");
+  // Build the address text used for searches: prefer what the person typed (it has their exact house number).
+  const typed=q.replace(/\s+/g," ").trim();
+  const full=p&&p.exact?`${p.street}, ${p.city?p.city+", ":""}${p.st} ${p.zip}`.trim():typed;
+  const zslug=full.replace(/[#,]/g," ").trim().replace(/\s+/g,"-");
+  saveRecent(typed);
+  const stName=p&&S&&S.states[p.st]?S.states[p.st].name:(p?p.st:"");
+  const cTxt=p&&p.county?`${p.county} County, ${stName}`:"";
+  const cParish=p&&p.st==="LA"?"Parish":"County";
+  const netr=p&&p.st?`https://publicrecords.netronline.com/state/${p.st}/county/${p.county.toLowerCase().replace(/[^a-z]+/g,"_").replace(/^_|_$/g,"")}`:"";
+  let ctx="";
+  if(p){
+    const z=Z&&Z.find(x=>x[0]===p.zip);
+    const cf=C&&Object.keys(C).find(k=>FIPS[k.slice(0,2)]===p.st&&C[k].name.replace(/,.*$/,"").toLowerCase()===p.county.toLowerCase());
+    const c=cf&&C[cf];
+    let m=null;if(c&&c.metro&&M){const sh=c.metro.split("-")[0].split(",")[0]+", "+c.metro.split(", ").pop().split("-")[0];m=M.find(x=>x.name===c.metro)||M.find(x=>x.name===sh)}
+    const cells=[];
+    if(z&&z[7])cells.push([`Typical home value, ZIP ${p.zip}`,money(z[7])+" "+chg(z[8])]);
+    if(z&&z[2])cells.push([`Median asking price, ZIP ${p.zip}`,money(z[2])]);
+    if(c&&c.zv)cells.push([`Typical home value, ${p.county} County`,money(c.zv)+" "+chg(c.zvyy)]);
+    if(m)cells.push([`Median sale price, ${m.name} metro`,money(m.p)+" "+chg(m.yy)]);
+    if(cells.length)ctx=`<div><div class="eyebrow" style="margin-bottom:6px">Prices in this area</div><div class="areactx">${cells.map(c=>`<div><span>${c[0]}</span><span class="num">${c[1]}</span></div>`).join("")}</div></div>`;
+  }
+  const nd=p&&NONDISCLOSURE.has(p.st)?`<div class="warn"><strong>${esc(stName)}</strong> does not make home sale prices public. County records show the appraised value, but the sold price may be missing everywhere, including on Zillow and Redfin.</div>`:"";
+  out.innerHTML=(keep?out.innerHTML:"")+`<div class="prop">
+    <div><div class="eyebrow">${p?(p.exact?"Property found":"Closest match (house number not on the map; links use the address you typed)"):"Address not found on the map; links use the address you typed"}</div>
+      <h3>${esc(p&&p.exact?p.street:typed)}</h3>
+      ${p?`<div class="where">${esc([p.city,cTxt,p.zip].filter(Boolean).join(" · "))}</div>`:""}</div>
+    ${nd}
+    <div><div class="eyebrow" style="margin-bottom:6px">Value and sold price for this property</div><div class="linkgrid">
+      <a href="https://www.zillow.com/homes/${encodeURIComponent(zslug)}_rb/" target="_blank" rel="noopener"><b>Zillow</b><span>Zestimate, tax value, price and sale history</span></a>
+      <a href="${g(full+" redfin")}" target="_blank" rel="noopener"><b>Redfin</b><span>Redfin estimate and sale history</span></a>
+      <a href="${g(full+" realtor.com")}" target="_blank" rel="noopener"><b>Realtor.com</b><span>Estimate, sold price and tax history</span></a>
+    </div></div>
+    ${p&&p.county?`<div><div class="eyebrow" style="margin-bottom:6px">Official county records (appraised value, owner, deeds)</div><div class="linkgrid">
+      <a href="${g(`${p.county} ${cParish} ${stName} property appraiser assessor search`)}" target="_blank" rel="noopener"><b>${esc(p.county)} ${cParish} property search</b><span>Finds the county's official appraisal / assessor site</span></a>
+      <a href="${g(`${p.county} ${cParish} ${stName} recorder of deeds search`)}" target="_blank" rel="noopener"><b>Deeds and sale records</b><span>County recorder or clerk</span></a>
+      <a href="${netr}" target="_blank" rel="noopener"><b>County records directory</b><span>All public-record sites for ${esc(p.county)} ${cParish}</span></a>
+    </div></div>`:""}
+    ${ctx}
+    <div class="hint">These open other websites. Official appraised values come from the county; estimates from Zillow and Redfin are not appraisals.</div>
+  </div>`;
+}
+$("#addrForm").addEventListener("submit",e=>{e.preventDefault();lookup($("#addr").value)});
+showRecent();
+
 </script>
 <script>
 if("serviceWorker" in navigator&&location.protocol!=="file:"){addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}))}
