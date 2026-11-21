@@ -35,7 +35,9 @@
         valueYear: txt(a.LASTASSD).slice(0, 4),
         sale: { price: pos(a.CONSIDR1), date: ymd(a.TRADATE) },
         yearBuilt: pos(a.YEARBLT), livingArea: pos(a.SQFTSTRC), lotAcres: pos(a.ACRES), use: txt(a.DESCLU),
-        style: txt(a.DESCSTYL), link: txt(a.SDATWEBADR), id: txt(a.ACCTID)
+        style: txt(a.DESCSTYL), link: txt(a.SDATWEBADR), id: txt(a.ACCTID),
+        mail: { street: txt(a.OWNADD1), city: txt(a.OWNCITY), state: txt(a.OWNSTATE), zip: txt(a.OWNERZIP) },
+        ownerOccupied: txt(a.OOI) === "H" ? true : txt(a.OOI) === "N" ? false : null
       })
     },
     CT: {
@@ -50,7 +52,8 @@
         sale: { price: pos(a.Sale_Price), date: epoch(a.Sale_Date) }, prior: { price: pos(a.Prior_Sale_Price), date: epoch(a.Prior_Sale_Date) },
         yearBuilt: pos(a.AYB), livingArea: pos(a.Living_Area), rooms: pos(a.Total_Rooms), beds: pos(a.Number_of_Bedroom),
         baths: pos(a.Number_of_Baths) ? pos(a.Number_of_Baths) + (pos(a.Number_of_Half_Baths) ? " full, " + pos(a.Number_of_Half_Baths) + " half" : "") : null,
-        use: txt(a.State_Use_Description), condition: txt(a.Condition_Description), zoning: txt(a.Zone)
+        use: txt(a.State_Use_Description), condition: txt(a.Condition_Description), zoning: txt(a.Zone),
+        mail: { street: txt(a.Mailing_Address), city: txt(a.Mailing_City), state: txt(a.Mailing_State), zip: "" }
       })
     },
     MA: {
@@ -63,7 +66,8 @@
         valueYear: a.FY ? "FY " + a.FY : "",
         sale: { price: pos(a.LS_PRICE), date: ymd(a.LS_DATE) },
         yearBuilt: pos(a.YEAR_BUILT), livingArea: pos(a.RES_AREA) || pos(a.BLD_AREA), rooms: pos(a.NUM_ROOMS), lotAcres: pos(a.LOT_SIZE),
-        use: txt(a.USE_DESC), style: txt(a.STYLE), zoning: txt(a.ZONING)
+        use: txt(a.USE_DESC), style: txt(a.STYLE), zoning: txt(a.ZONING),
+        mail: { street: txt(a.OWN_ADDR), city: txt(a.OWN_CITY), state: txt(a.OWN_STATE), zip: txt(a.OWN_ZIP) }
       })
     },
     NJ: {
@@ -71,12 +75,13 @@
       url: "https://services2.arcgis.com/XVOqAjTOJ5P6ngMu/arcgis/rest/services/Parcels_Composite_NJ_WM/FeatureServer/0",
       addr: a => a.PROP_LOC,
       map: a => ({
-        address: [txt(a.PROP_LOC), txt(a.MUN_NAME), txt(a.ZIP5 || a.ZIP_CODE)].filter(Boolean).join(", "), owner: txt(a.OWNER_NAME), county: txt(a.COUNTY),
+        address: [txt(a.PROP_LOC), txt(a.MUN_NAME)].filter(Boolean).join(", "), owner: txt(a.OWNER_NAME), county: txt(a.COUNTY),
         values: [["Assessed value", pos(a.NET_VALUE)], ["Land", pos(a.LAND_VAL)], ["Improvements", pos(a.IMPRVT_VAL)], ["Last year's property tax", pos(a.LAST_YR_TX)]],
         sale: { price: pos(a.SALE_PRICE), date: yymmdd(a.DEED_DATE) },
         yearBuilt: pos(a.YR_CONSTR), lotAcres: pos(a.CALC_ACRE), building: txt(a.BLDG_DESC), lotSize: txt(a.LAND_DESC),
         use: ({"1": "Vacant land", "2": "Residential", "3A": "Farm (house)", "3B": "Farmland", "4A": "Commercial", "4B": "Industrial", "4C": "Apartments", "15A": "Exempt (school)", "15B": "Exempt (school)", "15C": "Exempt (public)", "15D": "Exempt (church/charity)", "15E": "Exempt (cemetery)", "15F": "Exempt (other)"})[txt(a.PROP_CLASS)] || "",
-        note: "New Jersey assessed values can be well below market value in towns that have not reassessed recently."
+        note: "New Jersey assessed values can be well below market value in towns that have not reassessed recently.",
+        mail: { street: txt(a.ST_ADDRESS), city: txt(a.CITY_STATE).split(",")[0], state: ((txt(a.CITY_STATE).toUpperCase().match(/(?:,|\s)\s*([A-Z]{2})\.?$/) || [])[1]) || "", zip: txt(a.ZIP_CODE) }
       })
     },
     NC: {
@@ -89,7 +94,8 @@
         sale: { price: null, date: iso(a.saledatetx) || epoch(a.saledate) }, noPrice: true,
         noSale: "North Carolina's statewide parcel file has sale dates but not sale prices. The county buttons below lead to the deed and price.",
         yearBuilt: pos(a.structyear), lotAcres: pos(a.recareano) || pos(a.gisacres), use: txt(a.parusedsc2 || a.parusedesc), source: txt(a.sourceagnt),
-        deed: txt(a.sourceref)
+        deed: txt(a.sourceref),
+        mail: { street: txt(a.mailadd), city: txt(a.mcity).replace(/\s+[A-Z]{2}\s+[\d-]+$/, ""), state: txt(a.mstate) || (txt(a.mcity).match(/\s([A-Z]{2})\s+[\d-]+$/) || [])[1] || "", zip: txt(a.mzip) }
       })
     },
     WI: {
@@ -101,7 +107,8 @@
         values: [["Estimated fair market value", pos(a.ESTFMKVALUE)], ["Assessed value", pos(a.CNTASSDVALUE)], ["Land", pos(a.LNDVALUE)], ["Improvements", pos(a.IMPVALUE)], ["Net property tax", pos(a.NETPRPTA)]],
         valueYear: txt(a.TAXROLLYEAR), lotAcres: pos(a.ASSDACRES) || pos(a.DEEDACRES) || pos(a.GISACRES),
         use: ({"1": "Residential", "2": "Commercial", "3": "Manufacturing", "4": "Agricultural", "5": "Undeveloped", "5M": "Agricultural forest", "6": "Productive forest", "7": "Other", "X1": "Exempt", "X2": "Exempt", "X3": "Exempt", "X4": "Exempt"})[txt(a.PROPCLASS).split(",")[0]] || "",
-        noSale: "Wisconsin's statewide parcel file does not include sale prices."
+        noSale: "Wisconsin's statewide parcel file does not include sale prices.",
+        mail: (() => { const m = txt(a.PSTLADRESS).match(/^(.*?),\s*(.*?)\s+([A-Z]{2})\s+([\d-]+)$/); return m ? { street: m[1], city: m[2], state: m[3], zip: m[4] } : { street: txt(a.PSTLADRESS), city: "", state: "", zip: "" }; })()
       })
     }
   };

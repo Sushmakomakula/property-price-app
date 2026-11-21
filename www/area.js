@@ -6,16 +6,16 @@
   // How each state's service can be filtered to one area.
   const AREA = {
     MD: { zip: z => `ZIPCODE='${z}'`, town: t => `CITY='${up(t)}'`, oid: "OBJECTID",
-          fields: "ADDRESS,CITY,ZIPCODE,NFMTTLVL,NFMLNDVL,NFMIMPVL,LASTASSD,CONSIDR1,TRADATE,YEARBLT,SQFTSTRC,ACRES,DESCLU,DESCSTYL,SDATWEBADR,ACCTID,STRTNUM" },
+          fields: "OWNADD1,OWNCITY,OWNSTATE,OWNERZIP,OOI,ADDRESS,CITY,ZIPCODE,NFMTTLVL,NFMLNDVL,NFMIMPVL,LASTASSD,CONSIDR1,TRADATE,YEARBLT,SQFTSTRC,ACRES,DESCLU,DESCSTYL,SDATWEBADR,ACCTID,STRTNUM" },
     CT: { zipAsTown: true, town: t => `Town_Name='${up(t)}'`, oid: "OBJECTID", fields: "*" },
     MA: { zip: (z, t) => t ? `CITY='${up(t)}' AND ZIP LIKE '${z}%'` : `ZIP LIKE '${z}%'`, town: t => `CITY='${up(t)}'`, oid: "OBJECTID",
-          fields: "SITE_ADDR,ADDR_NUM,CITY,ZIP,OWNER1,TOTAL_VAL,LAND_VAL,BLDG_VAL,OTHER_VAL,FY,LS_PRICE,LS_DATE,YEAR_BUILT,RES_AREA,BLD_AREA,NUM_ROOMS,LOT_SIZE,USE_DESC,STYLE,ZONING" },
-    NJ: { zip: z => `ZIP5='${z}'`, town: t => `MUN_NAME LIKE '${up(t)}%'`, oid: "OBJECTID",
-          fields: "PROP_CLASS,PROP_LOC,MUN_NAME,ZIP5,ZIP_CODE,OWNER_NAME,COUNTY,NET_VALUE,LAND_VAL,IMPRVT_VAL,LAST_YR_TX,SALE_PRICE,DEED_DATE,YR_CONSTR,CALC_ACRE,BLDG_DESC,LAND_DESC" },
+          fields: "OWN_ADDR,OWN_CITY,OWN_STATE,OWN_ZIP,SITE_ADDR,ADDR_NUM,CITY,ZIP,OWNER1,TOTAL_VAL,LAND_VAL,BLDG_VAL,OTHER_VAL,FY,LS_PRICE,LS_DATE,YEAR_BUILT,RES_AREA,BLD_AREA,NUM_ROOMS,LOT_SIZE,USE_DESC,STYLE,ZONING" },
+    NJ: { zip: (z, t) => t ? `MUN_NAME LIKE '${up(t)}%'` : `ZIP5='${z}'`, zipLabel: (z, t) => t ? `${t} (town of ZIP ${z})` : null, town: t => `MUN_NAME LIKE '${up(t)}%'`, oid: "OBJECTID",
+          fields: "ST_ADDRESS,CITY_STATE,PROP_CLASS,PROP_LOC,MUN_NAME,ZIP5,ZIP_CODE,OWNER_NAME,COUNTY,NET_VALUE,LAND_VAL,IMPRVT_VAL,LAST_YR_TX,SALE_PRICE,DEED_DATE,YR_CONSTR,CALC_ACRE,BLDG_DESC,LAND_DESC" },
     NC: { zipRadius: 1500, town: t => `scity='${up(t)}'`, oid: "objectid",
-          fields: "siteadd,saddno,scity,szip,ownname,ownname2,cntyname,parval,parvaltype,landval,improvval,saledatetx,saledate,structyear,recareano,gisacres,parusedsc2,parusedesc,sourceagnt,sourceref" },
+          fields: "mailadd,mcity,mstate,mzip,siteadd,saddno,scity,szip,ownname,ownname2,cntyname,parval,parvaltype,landval,improvval,saledatetx,saledate,structyear,recareano,gisacres,parusedsc2,parusedesc,sourceagnt,sourceref" },
     WI: { zip: z => `ZIPCODE='${z}'`, town: t => `PLACENAME LIKE '%${up(t)}%'`, oid: "OBJECTID",
-          fields: "PROPCLASS,SITEADRESS,ADDNUM,PLACENAME,ZIPCODE,OWNERNME1,OWNERNME2,CONAME,ESTFMKVALUE,CNTASSDVALUE,LNDVALUE,IMPVALUE,NETPRPTA,TAXROLLYEAR,ASSDACRES,DEEDACRES,GISACRES" }
+          fields: "PSTLADRESS,PROPCLASS,SITEADRESS,ADDNUM,PLACENAME,ZIPCODE,OWNERNME1,OWNERNME2,CONAME,ESTFMKVALUE,CNTASSDVALUE,LNDVALUE,IMPVALUE,NETPRPTA,TAXROLLYEAR,ASSDACRES,DEEDACRES,GISACRES" }
   };
 
   async function call(url, params) {
@@ -39,7 +39,7 @@
     if (!cfg || !p) return null;
     const base = { outFields: cfg.fields, returnGeometry: "false", f: "json" };
     let filter = {}, label = "";
-    if (area.zip && cfg.zip) { filter.where = cfg.zip(area.zip, area.zipTown); label = "ZIP " + area.zip; }
+    if (area.zip && cfg.zip) { filter.where = cfg.zip(area.zip, area.zipTown); label = (cfg.zipLabel && cfg.zipLabel(area.zip, area.zipTown)) || "ZIP " + area.zip; }
     else if (area.zip && cfg.zipRadius && area.lat) {
       filter = { where: "1=1", geometry: area.lon + "," + area.lat, geometryType: "esriGeometryPoint", inSR: "4326",
                  spatialRel: "esriSpatialRelIntersects", distance: String(cfg.zipRadius), units: "esriSRUnit_Meter" };
@@ -66,7 +66,8 @@
 
   // Spreadsheet columns, in the same order as the app's table. type: text | money | date | int | num
   const COLS = [
-    ["Address", "text", 38], ["Owner", "text", 34], ["Value", "money", 15], ["Value type", "text", 24],
+    ["Address", "text", 38], ["Owner", "text", 34], ["Lead reasons", "text", 34], ["Owner mailing address", "text", 40], ["Years owned", "int", 11],
+    ["Value", "money", 15], ["Value type", "text", 24],
     ["Last sale price", "money", 15], ["Last sale date", "date", 14], ["Year built", "int", 11], ["Living area (sq ft)", "int", 14],
     ["Bedrooms", "int", 10], ["Bathrooms", "text", 12], ["Rooms", "int", 8], ["Lot (acres)", "num", 11],
     ["Land value", "money", 14], ["Building value", "money", 15], ["Assessed value", "money", 15],
@@ -88,6 +89,9 @@
     const n = x => (x === null || x === undefined || x === "" ? null : +x);
     return {
       "Address": r.address || null, "Owner": r.owner || null,
+      "Lead reasons": r._lead && r._lead.reasons.length ? r._lead.reasons.join("; ") : null,
+      "Owner mailing address": r.mail && r.mail.street ? [r.mail.street, r.mail.city, [r.mail.state, r.mail.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ") : null,
+      "Years owned": r._lead && r._lead.years != null ? r._lead.years : null,
       "Value": first ? first[1] : null, "Value type": first ? first[0] : null,
       "Last sale price": r.sale && r.sale.price ? r.sale.price : null, "Last sale date": r.sale ? xDate(r.sale.date) : null,
       "Year built": n(r.yearBuilt), "Living area (sq ft)": n(r.livingArea), "Bedrooms": n(r.beds), "Bathrooms": r.baths ? String(r.baths) : null,

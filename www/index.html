@@ -153,6 +153,29 @@ footer a{color:var(--accent)}
   <div class="notice"><b>Three prices</b><span><strong>Typical value</strong> is what a middle-of-the-market home is worth, worked out from real sales (Zillow). <strong>Median sale price</strong> is what homes actually sold for, by metro area (Zillow). <strong>Asking price</strong> is what sellers list for now (Realtor.com). Use the <strong>Recently sold</strong> links to see individual properties, including land, and their sold prices.</span></div>
 
 
+
+  <section class="card lookup" aria-label="For sale now in New Jersey">
+    <div><h2>For sale now in New Jersey</h2><div class="hint">Upcoming sheriff (foreclosure) sales in 17 NJ counties, taken from the county sheriffs' official listings and refreshed every day. Tap <strong>Value</strong> to compare the opening bid with the official assessed value.</div></div>
+    <div class="hint" id="fsMeta">Loading…</div>
+    <div class="searchrow" style="flex-wrap:wrap">
+      <input type="search" id="fsQ" placeholder="Filter by town, ZIP or street, e.g. Englewood" style="flex:1 1 200px" aria-label="Filter sheriff sales">
+      <select id="fsCounty" aria-label="County" style="font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"><option value="">All NJ counties</option></select>
+      <select id="fsStatus" aria-label="Status" style="font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"><option value="open">Upcoming only</option><option value="all">All statuses</option></select>
+      <select id="fsSort" aria-label="Sort" style="font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"><option value="soon">Soonest sale</option><option value="low">Lowest opening bid</option><option value="high">Highest opening bid</option></select>
+      <button class="btn" type="button" id="fsXlsx">Download Excel file</button>
+    </div>
+    <div id="fsDl" class="hint"></div>
+    <div class="tbl" style="max-height:600px"><table><thead><tr><th>Sale date</th><th>Property</th><th class="r">Opening bid</th><th>Status</th><th>Occupancy</th><th>Lender</th><th>Official value</th><th>Listing</th></tr></thead><tbody id="fsBody"></tbody></table></div>
+    <div id="fsMore"></div>
+    <div><div class="eyebrow" style="margin:8px 0 6px">More homes for sale by government and banks (official sites)</div><div class="links">
+      <a href="https://www.hudhomestore.gov/searchresult?citystate=NJ" target="_blank" rel="noopener">HUD homes in NJ</a>
+      <a href="https://homepath.fanniemae.com/" target="_blank" rel="noopener">Fannie Mae HomePath</a>
+      <a href="https://www.homesteps.com/" target="_blank" rel="noopener">Freddie Mac HomeSteps</a>
+      <a href="https://realestatesales.gov/" target="_blank" rel="noopener">US government property sales (GSA)</a>
+    </div></div>
+    <div class="hint">Sheriff sales are auctions: properties sell as-is and may have liens, and dates are often postponed. Always check the official listing and get a title search before bidding.</div>
+  </section>
+
   <section class="card lookup" aria-label="Look up a property">
     <div><h2>Look up any property</h2><div class="hint">Type a full US street address. In Texas, North Carolina, New Jersey, Massachusetts, Maryland, Wisconsin and Connecticut the app shows the official value, owner and sale record. Everywhere else it links to that property's records.</div></div>
     <form id="addrForm">
@@ -590,7 +613,9 @@ async function loadArea(){
     if(ctl!==areaCtl)return;
     if(!res||res.error){out.innerHTML=`<div class="warn">${esc(res?res.error:"Not available")}</div>`;return}
     if(!res.rows.length){out.innerHTML='<div class="warn">No properties were found for that area. For towns, use the official town name; for ZIP codes, check the number.</div>';return}
-    areaData={...res,st:a.st,name:a.zip?("ZIP "+a.zip):a.town};areaShown=200;setCompsWindow();renderArea();
+    areaData={...res,st:a.st,name:a.zip?("ZIP "+a.zip):a.town};areaShown=200;setCompsWindow();
+    for(const r of areaData.rows)r._lead=leadInfo(r,a.st);
+    renderArea();
   }catch(e){console.error("area lookup failed",e);if(e.message==="cancelled"||ctl.signal.aborted){out.innerHTML='<p class="muted">Cancelled.</p>';return}
     out.innerHTML='<div class="warn">The state records service did not respond. Try again in a minute.</div>'}
   finally{if(ctl===areaCtl)btn.disabled=false}
@@ -603,17 +628,41 @@ const isHome=r=>{const u=(r.use||"")+" "+(r.style||"")+" "+(r.building||"");retu
 let compsFrom=0;
 const setCompsWindow=()=>{let newest=0;for(const r of areaData.rows){const t=r.sale&&r.sale.price>=10000&&r.sale.date?+r.sale.date:0;if(t>newest&&t<=Date.now())newest=t}compsFrom=newest?newest-3*365*864e5:0};
 const isComp=r=>isHome(r)&&r.sale&&r.sale.price>=10000&&r.sale.date&&+r.sale.date>=compsFrom;
+// ---- Off-market leads: owners more likely to sell ----
+const ABBR={STREET:"ST",AVENUE:"AVE",ROAD:"RD",PLACE:"PL",DRIVE:"DR",TERRACE:"TER",COURT:"CT",LANE:"LN",BOULEVARD:"BLVD",CIRCLE:"CIR",PARKWAY:"PKWY",HIGHWAY:"HWY",NORTH:"N",SOUTH:"S",EAST:"E",WEST:"W"};
+const normSt=a=>(a||"").toUpperCase().split(",")[0].replace(/[.#]/g," ").split(/\s+/).filter(Boolean).map(w=>ABBR[w]||w).join(" ");
+const keyOf=a=>{const n=normSt(a).match(/^(\d+[A-Z]?)\s+(.*)$/);if(!n)return null;const words=n[2].split(" ").filter(w=>!["N","S","E","W","ST","AVE","RD","PL","DR","TER","CT","LN","BLVD","APT","UNIT"].includes(w));return n[1]+" "+(words[0]||"")};
+const ENTITY=/\b(LLC|L L C|INC|CORP|CORPORATION|COMPANY|CO|LP|LLP|LTD|HOLDINGS|PROPERTIES|REALTY|INVESTMENTS?|PARTNERS(HIP)?|ASSOCIATES|GROUP|VENTURES)\b/i;
+function leadInfo(r,st){
+  const reasons=[];let score=0;
+  const m=r.mail||{};const mk=keyOf(m.street),pk=keyOf(r.address);
+  const ms=(m.state||"").toUpperCase().trim();
+  let absentee=r.ownerOccupied===false||(mk&&pk&&mk!==pk&&!/^P\.?O\.? BOX/i.test(m.street||""));
+  if(/^P\.?O\.? BOX/i.test(m.street||"")&&ms&&ms!==st)absentee=true;
+  if(ms&&ms.length===2&&ms!==st){reasons.push("Out-of-state owner ("+ms+")");score+=3}
+  else if(absentee){reasons.push("Absentee owner (mail goes elsewhere)");score+=2}
+  const sd=r.sale&&r.sale.date&&!isNaN(r.sale.date)?r.sale.date:null;
+  const years=sd?Math.floor((Date.now()-sd)/(365.25*864e5)):null;
+  if(years!==null&&years>=20){reasons.push(`Owned ${years} years`);score+=years>=30?2:1}
+  const own=(r.owner||"").toUpperCase();
+  if(/\b(ESTATE OF|EST OF|HEIRS|DECEASED|DEC'D)\b/.test(own)||/\bESTATE\b$/.test(own)){reasons.push("Estate / heirs");score+=3}
+  else if(/\b(TRUST|TRUSTEE|TR|TRS)\b/.test(own)){reasons.push("Owned by a trust");score+=1}
+  else if(ENTITY.test(own)){reasons.push("Company-owned");score+=1}
+  return {reasons,score,years,absentee:!!absentee};
+}
+const isLead=r=>isHome(r)&&r._lead&&r._lead.score>=2;
 function areaRows(){
   const f=($("#areaFilter")?.value||"").trim().toUpperCase();
   const show=$("#areaShow")?.value||"all";
   let rows=areaData.rows;
-  if(show==="homes")rows=rows.filter(isHome);else if(show==="comps")rows=rows.filter(isComp);
+  if(show==="homes")rows=rows.filter(isHome);else if(show==="comps")rows=rows.filter(isComp);else if(show==="leads")rows=rows.filter(isLead);
   if(f)rows=rows.filter(r=>(r.address+" "+(r.owner||"")).toUpperCase().includes(f));
   const s=$("#areaSort")?.value||"value-desc";
   const sd=r=>r.sale&&r.sale.date&&!isNaN(r.sale.date)?+r.sale.date:0;
   const cmp={"value-desc":(a,b)=>(headVal(b)||0)-(headVal(a)||0),"value-asc":(a,b)=>(headVal(a)||Infinity)-(headVal(b)||Infinity),
     "sale-recent":(a,b)=>sd(b)-sd(a),"sale-price":(a,b)=>((b.sale&&b.sale.price)||0)-((a.sale&&a.sale.price)||0),
-    "address":(a,b)=>a.address.localeCompare(b.address,undefined,{numeric:true})}[s];
+    "address":(a,b)=>a.address.localeCompare(b.address,undefined,{numeric:true}),
+    "lead":(a,b)=>(b._lead.score-a._lead.score)||((b._lead.years||0)-(a._lead.years||0))}[s];
   return [...rows].sort(cmp);
 }
 function renderArea(){
@@ -633,31 +682,42 @@ function renderArea(){
     <div class="searchrow" style="flex-wrap:wrap">
       <input type="search" id="areaFilter" placeholder="Filter by street or owner" value="${esc(filterVal)}" style="flex:1 1 200px">
       <select id="areaShow" aria-label="Which properties to show" style="font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
-        <option value="all">All properties</option><option value="homes">Homes only</option>${hasSale?'<option value="comps">Comps: recent home sales</option>':""}</select>
+        <option value="all">All properties</option><option value="homes">Homes only</option><option value="leads">Off-market leads</option>${hasSale?'<option value="comps">Comps: recent home sales</option>':""}</select>
       <select id="areaSort" aria-label="Sort properties" style="font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
         <option value="value-desc">Highest value</option><option value="value-asc">Lowest value</option>
         ${hasSale?'<option value="sale-recent">Most recent sale</option><option value="sale-price">Highest sale price</option>':""}
-        <option value="address">Address</option></select>
+        <option value="address">Address</option><option value="lead">Best leads first</option></select>
       <button class="btn" type="button" id="areaXlsx">Download Excel file</button>
     </div>
     <div id="areaCounts" class="hint" style="margin-bottom:4px"></div>
     <div id="areaDl" class="hint"></div>
-    <div class="tbl" style="max-height:560px"><table><thead><tr><th>Address</th><th>Owner</th><th class="r">${esc(vt)}</th>${hasSale?'<th class="r">Last sale</th><th>Sale date</th>':""}<th class="r">Built</th><th class="r">Sq ft</th></tr></thead><tbody id="areaBody"></tbody></table></div>
+    <div class="tbl" style="max-height:560px"><table><thead id="areaHead"></thead><tbody id="areaBody"></tbody></table></div>
     <div id="areaMore"></div>
     <div class="hint" style="margin-top:8px">Source: ${esc(d.provider.name)}. Public tax records.</div>`;
   $("#areaSort").value=sortVal;if([...$("#areaShow").options].some(o=>o.value===showVal))$("#areaShow").value=showVal;
-  $("#areaShow").addEventListener("change",()=>{areaShown=200;if($("#areaShow").value==="comps")$("#areaSort").value="sale-recent";fillArea()});
+  $("#areaShow").addEventListener("change",()=>{areaShown=200;const v=$("#areaShow").value;if(v==="comps")$("#areaSort").value="sale-recent";if(v==="leads")$("#areaSort").value="lead";renderHead();fillArea()});
   $("#areaFilter").addEventListener("input",()=>{areaShown=200;fillArea()});
   $("#areaSort").addEventListener("change",()=>{areaShown=200;fillArea()});
   $("#areaXlsx").onclick=downloadXlsx;
-  fillArea();
+  areaVT=vt;renderHead();fillArea();
+}
+let areaVT="Value";
+const mailTxt=m=>m&&m.street?[m.street,m.city,[m.state,m.zip].filter(Boolean).join(" ")].filter(Boolean).join(", "):"";
+function renderHead(){
+  const hasSale=areaData.rows.some(r=>r.sale&&r.sale.price),leads=$("#areaShow")?.value==="leads";
+  $("#areaHead").innerHTML=leads?`<tr><th>Property</th><th>Owner</th><th>Owner mailing address</th><th>Why it's a lead</th><th class="r">Years owned</th><th class="r">${esc(areaVT)}</th></tr>`
+    :`<tr><th>Address</th><th>Owner</th><th class="r">${esc(areaVT)}</th>${hasSale?'<th class="r">Last sale</th><th>Sale date</th>':""}<th class="r">Built</th><th class="r">Sq ft</th></tr>`;
 }
 function fillArea(){
   const rows=areaRows(),hasSale=areaData.rows.some(r=>r.sale&&r.sale.price);
+  if($("#areaShow")?.value==="leads"){
+    $("#areaBody").innerHTML=rows.slice(0,areaShown).map(r=>`<tr><td>${esc(r.address)}</td><td>${esc(r.owner||"(not published)")}</td><td>${esc(mailTxt(r.mail))}</td><td style="white-space:normal;min-width:200px">${esc(r._lead.reasons.join(" · "))}</td><td class="r">${r._lead.years??"—"}</td><td class="r">${money(headVal(r))}</td></tr>`).join("");
+  } else
   $("#areaBody").innerHTML=rows.slice(0,areaShown).map(r=>`<tr><td>${esc(r.address)}</td><td>${esc(r.owner||"")}</td><td class="r">${money(headVal(r))}</td>${hasSale?`<td class="r">${r.sale&&r.sale.price?money(r.sale.price):"—"}</td><td>${r.sale?fmtDate(r.sale.date):""}</td>`:""}<td class="r">${r.yearBuilt||""}</td><td class="r">${r.livingArea?r.livingArea.toLocaleString("en-US"):""}</td></tr>`).join("");
   const homes=areaData.rows.filter(isHome).length,comps=areaData.rows.filter(isComp);
   const from=compsFrom?new Date(compsFrom).toLocaleDateString("en-US",{month:"short",year:"numeric"}):"";
-  $("#areaCounts").innerHTML=`${homes.toLocaleString("en-US")} homes${hasSale&&compsFrom?` · ${comps.length.toLocaleString("en-US")} home sales since ${from} (median ${money(median(comps.map(r=>r.sale.price)))})`:""}`;
+  const nLeads=areaData.rows.filter(isLead).length;
+  $("#areaCounts").innerHTML=`<strong>${esc(areaData.label||areaData.name)}</strong> · ${nLeads.toLocaleString("en-US")} off-market leads · ${homes.toLocaleString("en-US")} homes${hasSale&&compsFrom?` · ${comps.length.toLocaleString("en-US")} home sales since ${from} (median ${money(median(comps.map(r=>r.sale.price)))})`:""}`;
   $("#areaMore").innerHTML=rows.length>areaShown?`<button class="btn" type="button" id="areaMoreBtn" style="margin-top:8px;background:var(--muted)">Show more (${(rows.length-areaShown).toLocaleString("en-US")} left)</button>`:`<div class="hint" style="margin-top:6px">${rows.length.toLocaleString("en-US")} properties shown.</div>`;
   const mb=$("#areaMoreBtn");if(mb)mb.onclick=()=>{areaShown+=500;fillArea()};
 }
@@ -671,8 +731,10 @@ async function downloadXlsx(){
     await loadScript("lib/exceljs.min.js");
     const rows=areaRows().map(AREA.toRow);
     // Keep only columns that have something in them for this area.
+    const showVal=$("#areaShow")?.value||"all";
     const valueType=(rows.find(r=>r["Value type"])||{})["Value type"];
-    const cols=AREA.COLS.filter(c=>c[0]!=="Value type"&&c[0]!==valueType&&rows.some(r=>r[c[0]]!==null&&r[c[0]]!==undefined&&r[c[0]]!==""));
+    const leadCols=["Lead reasons","Owner mailing address","Years owned"];
+    const cols=AREA.COLS.filter(c=>c[0]!=="Value type"&&c[0]!==valueType&&(showVal==="leads"||!leadCols.includes(c[0])||c[0]==="Owner mailing address")&&rows.some(r=>r[c[0]]!==null&&r[c[0]]!==undefined&&r[c[0]]!==""));
     const fmt={money:'"$"#,##0',date:"mmm d, yyyy",int:"0",num:"0.000",text:"@"};
     const wb=new ExcelJS.Workbook();wb.creator="US Property Price Finder";
     const ws=wb.addWorksheet("Properties",{views:[{state:"frozen",ySplit:1}]});
@@ -693,14 +755,94 @@ async function downloadXlsx(){
     about.getColumn(1).font={bold:true};about.getColumn(2).alignment={wrapText:true,vertical:"top"};
     const buf=await wb.xlsx.writeBuffer();
     const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
-    const showVal=$("#areaShow")?.value||"all";
-    const fname=`${showVal==="comps"?"Comps":showVal==="homes"?"Homes":"Properties"} ${areaData.name.replace(/[^\w ,.-]/g,"")} ${areaData.st}.xlsx`;
+    const fname=`${showVal==="leads"?"Leads":showVal==="comps"?"Comps":showVal==="homes"?"Homes":"Properties"} ${areaData.name.replace(/[^\w ,.-]/g,"")} ${areaData.st}.xlsx`;
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=fname;document.body.appendChild(a);a.click();
     setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000);
     msg.textContent=`Downloaded “${fname}” (${rows.length.toLocaleString("en-US")} properties). Check your Downloads folder.`;
   }catch(e){console.error(e);msg.textContent="The Excel file could not be created. Try again, or use a smaller area."}
 }
 $("#areaForm").addEventListener("submit",e=>{e.preventDefault();loadArea()});
+
+</script>
+<script>
+// ---- For sale now: New Jersey sheriff (foreclosure) sales, refreshed daily ----
+let FS=null,fsShown=100;
+const CLOSED=/cancel|writ expired|vacated|sold|satisf|dismiss|withdrawn|bankrupt|redeemed|stayed/i;
+const fsDate=s=>{const m=(s||"").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);return m?new Date(+m[3],+m[1]-1,+m[2]):null};
+async function loadForSale(){
+  const out=$("#fsOut");
+  try{FS=await (await fetch("data/nj_sheriff_sales.json",{cache:"no-cache"})).json()}catch(e){out.innerHTML='<div class="warn">The sheriff sale list could not load. Check your connection and reload.</div>';return}
+  for(const s of FS.sales){s._d=fsDate(s.sale_date);s._open=!CLOSED.test(s.status||"")&&(!s._d||s._d>=new Date(new Date().toDateString()))}
+  const counties=[...new Set(FS.sales.map(s=>s.county))].sort();
+  $("#fsCounty").innerHTML='<option value="">All NJ counties</option>'+counties.map(c=>`<option>${esc(c)}</option>`).join("");
+  if(!FS.sales.length){$("#fsMeta").textContent="The list is being collected from the county sheriffs right now. Check back in about an hour.";$("#fsBody").innerHTML="";return}
+  $("#fsMeta").textContent=`Updated ${FS.updated} from the county sheriffs' official listings. ${FS.sales.filter(s=>s._open).length.toLocaleString("en-US")} upcoming sales.`;
+  fillForSale();
+}
+function fsRows(){
+  const q=($("#fsQ").value||"").trim().toUpperCase(),c=$("#fsCounty").value,st=$("#fsStatus").value,sort=$("#fsSort").value;
+  let rows=FS.sales.filter(s=>(!c||s.county===c)&&(st==="all"||s._open)&&(!q||(s.address+" "+s.town+" "+s.zip+" "+s.county).toUpperCase().includes(q)));
+  const by={soon:(a,b)=>(a._d||9e15)-(b._d||9e15),low:(a,b)=>(a.upset||9e15)-(b.upset||9e15),high:(a,b)=>(b.upset||0)-(a.upset||0)}[sort];
+  return rows.sort(by);
+}
+function fillForSale(){
+  const rows=fsRows();
+  $("#fsBody").innerHTML=rows.slice(0,fsShown).map((s,i)=>`<tr>
+    <td>${esc(s.sale_date||"")}</td>
+    <td style="white-space:normal;min-width:180px"><strong>${esc(s.street||s.address)}</strong><br><span class="muted">${esc([s.town,s.zip].filter(Boolean).join(" "))} · ${esc(s.county)} County</span></td>
+    <td class="r">${s.upset?money(s.upset):"—"}</td>
+    <td>${esc(s.status||"")}${s.adjournments?`<br><span class="muted">${s.adjournments} postponement${s.adjournments>1?"s":""}</span>`:""}</td>
+    <td>${esc(s.occupancy||"")}</td>
+    <td style="white-space:normal;min-width:160px" class="muted">${esc((s.plaintiff||"").slice(0,70))}</td>
+    <td><button class="btn" type="button" data-i="${i}" style="padding:6px 10px;font-size:.8rem">Value</button><div class="fsval hint" id="fsv${i}"></div></td>
+    <td><a class="sold" href="${esc(s.list_url)}" target="_blank" rel="noopener">Official list</a><br><span class="muted" style="font-size:.75rem">#${esc(s.sheriff_no||"")}</span></td></tr>`).join("")
+    ||'<tr><td colspan="8" class="muted">No sales match. Try another town, county or "All statuses".</td></tr>';
+  $("#fsBody").querySelectorAll("button[data-i]").forEach(b=>b.onclick=()=>fsValue(rows[+b.dataset.i],$("#fsv"+b.dataset.i),b));
+  $("#fsMore").innerHTML=rows.length>fsShown?`<button class="btn" type="button" id="fsMoreBtn" style="margin-top:8px;background:var(--muted)">Show more (${(rows.length-fsShown).toLocaleString("en-US")} left)</button>`:`<div class="hint" style="margin-top:6px">${rows.length.toLocaleString("en-US")} sales shown.</div>`;
+  const mb=$("#fsMoreBtn");if(mb)mb.onclick=()=>{fsShown+=200;fillForSale()};
+}
+// Official tax record for a listing: assessed value, last sale, year built (compare with the opening bid).
+async function fsValue(s,el,btn){
+  btn.disabled=true;el.textContent="Looking up…";
+  try{
+    const q=`${s.street}, ${s.town}, NJ ${s.zip||""}`.trim();
+    const r=await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=us&limit=1&q="+encodeURIComponent(q));
+    const h=(await r.json())[0];
+    if(!h){el.textContent="Address not on the map.";return}
+    const res=await PARCELS.lookupParcel("NJ",h.lon,h.lat,s.street);
+    if(!res||!res.record||!res.exact){el.textContent="No exact tax record found.";return}
+    const x=res.record,v=(x.values||[]).find(a=>a[1]);
+    const parts=[v?`Assessed ${money(v[1])}`:null,x.sale&&x.sale.price>1000?`last sold ${money(x.sale.price)}${x.sale.date?" ("+x.sale.date.getFullYear()+")":""}`:null,x.yearBuilt?`built ${x.yearBuilt}`:null,x.lotAcres?`${(+x.lotAcres).toFixed(2)} ac`:null];
+    el.innerHTML=parts.filter(Boolean).map(esc).join(" · ");
+    if(v&&s.upset){const ratio=s.upset/v[1];el.innerHTML+=`<br><strong>Opening bid = ${(ratio*100).toFixed(0)}% of assessed value</strong>`}
+  }catch(e){el.textContent="Lookup failed. Try again."}finally{btn.disabled=false}
+}
+async function downloadForSale(){
+  const msg=$("#fsDl");
+  const native=window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform();
+  if(native){msg.innerHTML='Downloads don\'t work inside the Android app. Open <a href="https://sushmakomakula.github.io/property-price-app/" target="_blank" rel="noopener">the website</a> in Chrome to download the Excel file.';return}
+  msg.textContent="Preparing the Excel file…";
+  try{
+    await loadScript("lib/exceljs.min.js");
+    const rows=fsRows();
+    const wb=new ExcelJS.Workbook();const ws=wb.addWorksheet("NJ sheriff sales",{views:[{state:"frozen",ySplit:1}]});
+    const cols=[["Sale date",14,"mmm d, yyyy"],["Street",32,"@"],["Town",18,"@"],["ZIP",8,"@"],["County",12,"@"],["Opening bid (approx. upset)",16,'"$"#,##0'],["Status",22,"@"],["Postponements",12,"0"],["First scheduled",14,"@"],["Occupancy",12,"@"],["Lender (plaintiff)",40,"@"],["Owner (defendant)",40,"@"],["Block / lot",20,"@"],["Lot dimensions",22,"@"],["Lender's attorney",30,"@"],["Attorney phone",14,"@"],["Sheriff #",14,"@"],["Official list",40,"@"]];
+    ws.columns=cols.map(([h,w,f])=>({header:h,key:h,width:w,style:{numFmt:f}}));
+    for(const s of rows)ws.addRow({"Sale date":s._d?new Date(Date.UTC(s._d.getFullYear(),s._d.getMonth(),s._d.getDate())):s.sale_date,"Street":s.street||s.address,"Town":s.town,"ZIP":s.zip,"County":s.county,"Opening bid (approx. upset)":s.upset||null,"Status":s.status,"Postponements":s.adjournments??null,"First scheduled":s.first_scheduled,"Occupancy":s.occupancy,"Lender (plaintiff)":s.plaintiff,"Owner (defendant)":s.defendant,"Block / lot":s.block_lot,"Lot dimensions":s.dimensions,"Lender's attorney":s.attorney,"Attorney phone":s.attorney_phone,"Sheriff #":s.sheriff_no,"Official list":s.list_url?{text:"Open",hyperlink:s.list_url}:null});
+    const h=ws.getRow(1);h.height=30;h.eachCell(c=>{c.font={bold:true,color:{argb:"FFFFFFFF"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF0F6B57"}};c.alignment={vertical:"middle",wrapText:true}});
+    ws.autoFilter={from:{row:1,column:1},to:{row:1,column:cols.length}};
+    const about=wb.addWorksheet("About");about.columns=[{width:16},{width:90}];
+    [["Source","County sheriffs' official foreclosure sale listings ("+FS.source+")"],["Updated",FS.updated],["Sales",rows.length],["Note","Opening bid is the sheriff's approximate upset price; the final price is set at auction. Sales are often postponed. Properties are sold as-is, subject to liens. Check the official listing and a title search before bidding."]].forEach(r=>about.addRow(r));
+    about.getColumn(1).font={bold:true};about.getColumn(2).alignment={wrapText:true};
+    const buf=await wb.xlsx.writeBuffer();const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+    const c=$("#fsCounty").value;a.download=`NJ sheriff sales${c?" "+c+" County":""} ${new Date().toISOString().slice(0,10)}.xlsx`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000);
+    msg.textContent=`Downloaded ${rows.length.toLocaleString("en-US")} sales. Check your Downloads folder.`;
+  }catch(e){console.error(e);msg.textContent="The Excel file could not be created. Try again."}
+}
+["#fsQ","#fsCounty","#fsStatus","#fsSort"].forEach(id=>$(id).addEventListener(id==="#fsQ"?"input":"change",()=>{fsShown=100;FS&&fillForSale()}));
+$("#fsXlsx").onclick=downloadForSale;
+loadForSale();
 
 </script>
 <script>
