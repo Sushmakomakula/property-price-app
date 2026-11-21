@@ -183,6 +183,16 @@ footer a{color:var(--accent)}
       <button class="btn" id="addrBtn" type="submit">Look up</button>
     </form>
     <div class="recent" id="recent" hidden></div>
+    <details id="plSettings"><summary class="hint" style="cursor:pointer">Full records for any US address (PropertyLayer settings)</summary>
+      <div class="hint" style="margin:8px 0">Paste your free PropertyLayer API key (100 lookups a month, no card). It is saved only on this device. In the Android app that is all you need. On the website, PropertyLayer also needs your connector address (see the setup guide in the project's README).</div>
+      <div class="searchrow" style="flex-wrap:wrap">
+        <input type="password" id="plKey" placeholder="PropertyLayer API key" autocomplete="off" style="flex:1 1 220px" aria-label="PropertyLayer API key">
+        <input type="url" id="plProxy" placeholder="Connector address (website only, optional)" autocomplete="off" style="flex:1 1 220px" aria-label="Connector address">
+        <button class="btn" type="button" id="plSave">Save</button>
+        <button class="btn" type="button" id="plUsage" style="background:var(--muted)">Check lookups left</button>
+      </div>
+      <div class="hint" id="plMsg"></div>
+    </details>
     <div id="addrOut"></div>
   </section>
 
@@ -444,6 +454,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>S&&draw
 new MutationObserver(()=>S&&draw()).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
 </script>
 <script src="parcels.js"></script>
+<script src="propertylayer.js"></script>
 <script>
 // ---- Property lookup: any US address -> county + links to that property's records ----
 const NONDISCLOSURE=new Set(["TX","UT","NM","WY","ID","MT","ND","KS","MS","AK","LA","MO"]);
@@ -512,6 +523,7 @@ function renderProp(p,q,keep){
       <h3>${esc(p&&p.exact?p.street:typed)}</h3>
       ${p?`<div class="where">${esc([p.city,cTxt,p.zip].filter(Boolean).join(" · "))}</div>`:""}</div>
     <div class="parcel" id="parcelBox"></div>
+    <div class="parcel" id="plBox"><button class="btn" type="button" id="plGo">Get full county record</button> <span class="hint">Owner, all sales, tax bills, building details · uses 1 PropertyLayer lookup</span></div>
     ${nd}
     <div><div class="eyebrow" style="margin-bottom:6px">Value and sold price for this property</div><div class="linkgrid">
       <a href="https://www.zillow.com/homes/${encodeURIComponent(zslug)}_rb/" target="_blank" rel="noopener"><b>Zillow</b><span>Zestimate, tax value, price and sale history</span></a>
@@ -527,7 +539,27 @@ function renderProp(p,q,keep){
     <div class="hint">These open other websites. Official appraised values come from the county; estimates from Zillow and Redfin are not appraisals.</div>
   </div>`;
   loadParcel(p,typed);
+  const go=$("#plGo");if(go)go.onclick=()=>loadPL(p,typed);
 }
+async function loadPL(p,typed){
+  const box=$("#plBox");
+  if(!window.PL||!PL.ready()){box.innerHTML=`<div class="warn">${PL&&PL.isNative()?"Add your PropertyLayer key first: open <strong>Full records for any US address</strong> above.":"On the website, full records need your PropertyLayer key <em>and</em> connector. Use the Android app with just your key, or open <strong>Full records for any US address</strong> above."}</div>`;$("#plSettings").open=true;return}
+  // Prefer the clean address from the map when it found the exact house; otherwise what was typed.
+  const addr=p&&p.exact?`${p.street}, ${p.city?p.city+", ":""}${p.st} ${p.zip}`.trim():typed;
+  box.innerHTML='<p class="muted">Getting the full county record…</p>';
+  try{
+    const res=await PL.lookup(addr);
+    const list=Array.isArray(res)?res:(res&&res.results)||[];
+    if(!list.length){box.innerHTML='<div class="warn">PropertyLayer found the address but could not match it to exactly one property. Check the house number or add the unit number.</div>';return}
+    box.innerHTML=PL.render(list[0]);
+  }catch(e){box.innerHTML=`<div class="warn">${esc(e.message)}</div>`}
+}
+(function(){
+  const k=$("#plKey"),px=$("#plProxy"),msg=$("#plMsg");if(!k)return;
+  k.value=PL.key();px.value=PL.proxy();
+  $("#plSave").onclick=()=>{PL.store.set("plKey",k.value.trim());PL.store.set("plProxy",px.value.trim());msg.textContent=k.value.trim()||px.value.trim()?"Saved on this device.":"Removed from this device."};
+  $("#plUsage").onclick=async()=>{msg.textContent="Checking…";try{const u=await PL.usage();msg.textContent="PropertyLayer: "+Object.entries(u||{}).map(([a,b])=>a.replace(/_/g," ")+": "+(typeof b==="object"?JSON.stringify(b):b)).join(" · ")}catch(e){msg.textContent=e.message}};
+})();
 const fmtDate=d=>d&&!isNaN(d)?d.toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"}):"";
 const STATE_LIST=()=>window.PARCELS.states.map(a=>S&&S.states[a]?S.states[a].name:a).join(", ");
 let parcelReq=0;

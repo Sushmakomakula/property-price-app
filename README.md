@@ -51,3 +51,29 @@ Then open http://localhost:8080.
 - **Asking price:** Realtor.com Residential Listings Database.
 - Vacant land has no free price averages; the app links to land sold and land for sale instead.
 - This is not an appraisal.
+
+## Full records for any US address (PropertyLayer)
+
+"Look up any property" → **Get full county record** shows that property's official county record from
+[PropertyLayer](https://propertylayer.com): owner and mailing address, assessed/market/taxable values,
+tax bills (and whether taxes are delinquent), every sale and transfer with price, buyer and seller,
+bedrooms, bathrooms, square feet, year built, lot, zoning and flood zone.
+
+1. Create a free PropertyLayer account (100 lookups a month, no credit card) and create an API key
+   under **API Keys** in the dashboard.
+2. In the app, open **Full records for any US address (PropertyLayer settings)**, paste the key and tap **Save**.
+   The key is stored only on that device.
+
+**Android app:** that's all. **Website:** PropertyLayer doesn't accept calls from other websites, so the
+website needs a small free connector:
+
+### PropertyLayer connector (website only, free)
+
+1. Create a free account at [dash.cloudflare.com](https://dash.cloudflare.com) (no card needed for Workers).
+2. **Workers & Pages → Create → Create Worker**, name it `propertylayer-connector`, **Deploy**.
+3. **Edit code**, replace everything with the contents of `workers/propertylayer-proxy.js`, **Deploy**.
+4. **Settings → Variables and Secrets → Add**: type **Secret**, name `PL_KEY`, value = your PropertyLayer key. Save.
+5. Copy the worker's address (like `https://propertylayer-connector.yourname.workers.dev`) into the
+   app's **Connector address** box and tap **Save**. You can then leave the key box empty on the website.
+
+The connector only answers requests from `https://sushmakomakula.github.io`, so other sites can't use your lookups.

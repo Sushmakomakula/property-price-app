@@ -1,5 +1,10 @@
 {
   "appId": "com.propertypricefinder.app",
   "appName": "Price Finder",
-  "webDir": "www"
+  "webDir": "www",
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
 }
