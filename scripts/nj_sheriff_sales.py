@@ -2,7 +2,7 @@
 listing site (salesweb.civilview.com) and write them to www/data/nj_sheriff_sales.json.
 
 Runs daily on GitHub Actions. Polite: one request at a time with a short pause."""
-import html, json, re, sys, time, urllib.request, http.cookiejar, datetime, os
+import html, json, re, sys, time, urllib.request, urllib.parse, http.cookiejar, datetime, os
 
 BASE = "https://salesweb.civilview.com"
 COUNTIES = {25: "Atlantic", 7: "Bergen", 3: "Burlington", 1: "Camden", 52: "Cape May", 6: "Cumberland", 2: "Essex",
@@ -80,29 +80,66 @@ def parse_detail(t):
             d["first_scheduled"] = pairs[0][1]
     return d
 
-# Official NJ municipality / town names, longest first, for splitting "STREET TOWN NJ ZIP".
+# ---- Official NJ tax records (NJ Office of GIS, MOD-IV) ----
+PARCELS = "https://services2.arcgis.com/XVOqAjTOJ5P6ngMu/arcgis/rest/services/Parcels_Composite_NJ_WM/FeatureServer/0/query"
+FIELDS = "PROP_LOC,MUN_NAME,COUNTY,NET_VALUE,LAND_VAL,IMPRVT_VAL,LAST_YR_TX,SALE_PRICE,DEED_DATE,YR_CONSTR,CALC_ACRE,BLDG_DESC,LAND_DESC,PROP_CLASS,ST_ADDRESS,CITY_STATE"
+CLASS = {"1": "Vacant land", "2": "Residential (1-4 family)", "3A": "Farm (house)", "3B": "Farmland", "4A": "Commercial", "4B": "Industrial", "4C": "Apartments (5+ units)"}
+
+def query(where, fields=FIELDS, n=20, extra=None):
+    params = {"where": where, "outFields": fields, "returnGeometry": "false", "f": "json", "resultRecordCount": str(n)}
+    params.update(extra or {})
+    q = urllib.parse.urlencode(params)
+    for i in range(3):
+        try:
+            with urllib.request.urlopen(PARCELS + "?" + q, timeout=120) as r:
+                return [f["attributes"] for f in json.loads(r.read().decode()).get("features", [])]
+        except Exception:
+            if i == 2: return []
+            time.sleep(2 * (i + 1))
+
+# Official NJ municipality names (564, from the state tax file) plus common spellings, longest first,
+# for splitting "STREET TOWN NJ ZIP" and for matching the tax record. Entries: (spelling, MUN_NAME or None).
 TOWNS = []
+SUFFIX = r"(?:TOWNSHIP|TWNSHP|TWP|BOROUGH|BORO|CITY|TOWN|VILLAGE)"
 def load_towns():
+    seen = {}
+    for a in query("1=1", "MUN_NAME,COUNTY", 2000, {"returnDistinctValues": "true"}):
+        mun = a.get("MUN_NAME")
+        if not mun: continue
+        base = re.sub(r"\s+" + SUFFIX + r"$", "", mun)
+        variants = {mun, base}
+        for v in list(variants):
+            variants |= {v.replace("MT ", "MOUNT "), v.replace(" RIV ", " RIVER ").replace(" RIV", " RIVER")}
+        for v in list(variants):
+            for suf in ("TOWNSHIP", "TWP", "BOROUGH", "BORO", "CITY"):
+                variants.add(v + " " + suf)
+        for v in variants:
+            seen.setdefault(v, set()).add(mun)
+    out = [(v, next(iter(ms)) if len(ms) == 1 else None) for v, ms in seen.items()]
+    # Postal place names (e.g. Sicklerville) that are not municipalities.
     try:
         z = json.load(open(os.path.join(os.path.dirname(__file__), "..", "www", "data", "zips.json")))
-        names = {r[1].rsplit(", ", 1)[0].upper() for r in z if r[1].endswith(", nj")}
+        for r in z:
+            if r[1].endswith(", nj"):
+                n = r[1].rsplit(", ", 1)[0].upper()
+                if n not in seen: out.append((n, None))
     except Exception:
-        names = set()
-    names |= {"EAST ORANGE", "WEST ORANGE", "SOUTH ORANGE", "ORANGE", "NEWARK", "JERSEY CITY", "PATERSON", "ELIZABETH", "TRENTON", "CAMDEN"}
-    TOWNS[:] = sorted(names, key=len, reverse=True)
+        pass
+    TOWNS[:] = sorted(out, key=lambda t: len(t[0]), reverse=True)
 
 def split_address(a):
+    """'27 ROBBINWOOD TERRACE LINDEN NJ 07036' -> ('27 Robbinwood Terrace', 'Linden', '07036', 'LINDEN CITY')"""
     if not TOWNS: load_towns()
-    a = re.sub(r"\s+", " ", a).strip().upper()
-    m = re.search(r"^(.*?)[ ,]*\bN\.?J\.?\b,?\s*(\d{5})?", a)
+    a = re.sub(r"\s+", " ", a).strip().upper().replace(".", "")
+    m = re.search(r"^(.*?)[ ,]*\bNJ\b,?\s*(\d{5})?", a)
     before, z = (m.group(1), m.group(2) or "") if m else (a, "")
     before = before.strip(" ,")
-    town = ""
-    for t in TOWNS:
+    town, mun = "", None
+    for t, official in TOWNS:
         if before.endswith(" " + t) or before.endswith("," + t):
-            town = t; before = before[: -len(t)].strip(" ,"); break
+            town, mun = t, official; before = before[: -len(t)].strip(" ,"); break
     street = re.sub(r"\s+(A/?K/?A|AKA)\s.*$", "", before).strip(" ,")
-    return street.title(), town.title(), z
+    return street.title(), re.sub(r"\s+" + SUFFIX + r"$", "", town).title(), z, mun
 
 def county_sales(cid, name):
     o = opener()
@@ -126,16 +163,76 @@ def county_sales(cid, name):
         try: det = parse_detail(text(get(o, BASE + href)))
         except Exception as e: det = {"error": str(e)[:80]}
         addr = rec.get("Address", "")
-        street, town, z = split_address(addr)
+        street, town, z, mun = split_address(addr)
         res.append({
             "county": name, "sheriff_no": rec.get("Sheriff #") or rec.get("Sheriff Number"),
-            "sale_date": rec.get("Sales Date") or rec.get("Sale Date"), "address": addr, "street": street, "town": town, "zip": z,
+            "sale_date": rec.get("Sales Date") or rec.get("Sale Date"), "address": addr, "street": street, "town": town, "zip": z, "municipality": mun,
             "plaintiff": rec.get("Plaintiff"), "defendant": rec.get("Defendant"),
             "status": det.get("status"), "adjournments": det.get("adjournments"), "first_scheduled": det.get("first_scheduled"), "upset": det.get("upset"), "judgment": det.get("judgment"),
             "occupancy": det.get("occupancy"), "block_lot": det.get("block_lot"), "dimensions": det.get("dimensions"),
             "attorney": det.get("attorney"), "attorney_phone": det.get("attorney_phone"),
             "list_url": f"{BASE}/Sales/SalesSearch?countyId={cid}"})
     return res
+
+ORD = {"FIRST": "1ST", "SECOND": "2ND", "THIRD": "3RD", "FOURTH": "4TH", "FIFTH": "5TH", "SIXTH": "6TH"}
+DIRS = {"N", "S", "E", "W", "NORTH", "SOUTH", "EAST", "WEST"}
+TYPES = {"STREET": "ST", "ST": "ST", "AVENUE": "AVE", "AVE": "AVE", "AV": "AVE", "ROAD": "RD", "RD": "RD", "PLACE": "PL", "PL": "PL",
+         "DRIVE": "DR", "DR": "DR", "LANE": "LN", "LN": "LN", "LA": "LN", "COURT": "CT", "CT": "CT", "TERRACE": "TER", "TER": "TER", "TERR": "TER",
+         "BOULEVARD": "BLVD", "BLVD": "BLVD", "PARKWAY": "PKWY", "PKWY": "PKWY", "CIRCLE": "CIR", "CIR": "CIR", "WAY": "WAY", "HIGHWAY": "HWY", "HWY": "HWY"}
+def street_key(st):
+    """'447 S. 17th Street' -> ('447', '17TH'); the house number and the first street-name word."""
+    w = re.sub(r"[.,#]", " ", (st or "").upper()).split()
+    if not w or not re.match(r"^\d+[A-Z]?(-\d+[A-Z]?)?$", w[0]): return None
+    rest = [ORD.get(x, x) for x in w[1:] if x not in DIRS]
+    return (w[0].split("-")[0], rest[0]) if rest else None
+def street_type(st):
+    w = re.sub(r"[.,#-]", " ", (st or "").upper()).split()
+    for x in w[2:]:
+        if x in ("APT", "UNIT", "STE", "SUITE"): break
+        if x in TYPES: return TYPES[x]
+    return None
+def unit_of(st):
+    m = re.search(r"\b(?:APT|UNIT|STE|SUITE|#)\s*-?\s*([A-Z0-9-]+)", (st or "").upper().replace("-APT", " APT"))
+    return m.group(1) if m else None
+
+def tax_record(street, town, county, mun=None):
+    k = street_key(street)
+    if not k: return None
+    num, word = k
+    sq = lambda x: x.replace("'", "''")
+    like = f"PROP_LOC LIKE '{num} %{sq(word)}%'"
+    want_type, want_unit = street_type(street), unit_of(street)
+    def good(a):   # same number, same street name, same street type and unit when both are given
+        p = a.get("PROP_LOC")
+        if street_key(p) != (num, word): return False
+        t = street_type(p)
+        if want_type and t and t != want_type: return False
+        u = unit_of(p)
+        if want_unit and u and u != want_unit: return False
+        return True
+    fs = []
+    if mun:
+        fs = [a for a in query(f"MUN_NAME='{sq(mun)}' AND {like}") if good(a)]
+    elif town and county:
+        fs = [a for a in query(f"MUN_NAME LIKE '{sq(town.upper())}%' AND COUNTY='{sq(county.upper())}' AND {like}") if good(a)]
+    if not fs and county and not mun:
+        # Postal names like Sicklerville: search the county, accept only one exact match.
+        cands = [a for a in query(f"COUNTY='{sq(county.upper())}' AND {like}") if good(a)]
+        if len({(a.get("PROP_LOC") or "") + (a.get("MUN_NAME") or "") for a in cands}) == 1: fs = cands
+    if not fs: return None
+    a = fs[0]
+    dd = str(a.get("DEED_DATE") or "")
+    sale_date = None
+    if re.fullmatch(r"\d{6}", dd):
+        y = int(dd[:2]); y += 1900 if y > 50 else 2000
+        sale_date = f"{y}-{dd[2:4]}-{dd[4:6]}"
+    mail = ", ".join(x for x in [(a.get("ST_ADDRESS") or "").strip(), (a.get("CITY_STATE") or "").strip()] if x)
+    return {"assessed": a.get("NET_VALUE") or None, "land": a.get("LAND_VAL") or None, "building": a.get("IMPRVT_VAL") or None,
+            "tax": round(a["LAST_YR_TX"]) if a.get("LAST_YR_TX") else None,
+            "last_sale_price": a.get("SALE_PRICE") if (a.get("SALE_PRICE") or 0) >= 1000 else None, "last_sale_date": sale_date,
+            "year_built": a.get("YR_CONSTR") or None, "acres": round(a["CALC_ACRE"], 3) if a.get("CALC_ACRE") else None,
+            "building_desc": a.get("BLDG_DESC"), "lot_size": a.get("LAND_DESC"), "type": CLASS.get(str(a.get("PROP_CLASS") or ""), str(a.get("PROP_CLASS") or "")),
+            "owner_mail": mail or None, "tax_address": f"{a.get('PROP_LOC')}, {a.get('MUN_NAME')}"}
 
 def main(path):
     from concurrent.futures import ThreadPoolExecutor
@@ -152,6 +249,16 @@ def main(path):
             allrows += rows; report[name] = err or len(rows)
             print(name, report[name], flush=True)
     allrows.sort(key=lambda r: (r["county"], r.get("sale_date") or ""))
+    # Attach the official tax record to every listing.
+    def add(r):
+        try: r["tax_record"] = tax_record(r.get("street"), r.get("town"), r.get("county"), r.get("municipality"))
+        except Exception: r["tax_record"] = None
+        t = r["tax_record"]
+        r["bid_pct_of_assessed"] = round(r["upset"] / t["assessed"], 3) if t and t.get("assessed") and r.get("upset") else None
+        return r
+    if os.environ.get("NO_TAX") != "1":
+        with ThreadPoolExecutor(max_workers=4) as ex: list(ex.map(add, allrows))
+        print("tax records matched", sum(1 for r in allrows if r.get("tax_record")), "of", len(allrows), flush=True)
     data = {"updated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), "source": BASE, "counties": report, "sales": allrows}
     with open(path, "w") as f: json.dump(data, f, separators=(",", ":"))
     print("total", len(allrows))

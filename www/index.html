@@ -161,11 +161,11 @@ footer a{color:var(--accent)}
       <input type="search" id="fsQ" placeholder="Filter by town, ZIP or street, e.g. Englewood" style="flex:1 1 200px" aria-label="Filter sheriff sales">
       <select id="fsCounty" aria-label="County" style="font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"><option value="">All NJ counties</option></select>
       <select id="fsStatus" aria-label="Status" style="font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"><option value="open">Upcoming only</option><option value="all">All statuses</option></select>
-      <select id="fsSort" aria-label="Sort" style="font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"><option value="soon">Soonest sale</option><option value="low">Lowest opening bid</option><option value="high">Highest opening bid</option></select>
+      <select id="fsSort" aria-label="Sort" style="font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"><option value="soon">Soonest sale</option><option value="deal">Best deal (bid vs value)</option><option value="low">Lowest opening bid</option><option value="high">Highest opening bid</option></select>
       <button class="btn" type="button" id="fsXlsx">Download Excel file</button>
     </div>
     <div id="fsDl" class="hint"></div>
-    <div class="tbl" style="max-height:600px"><table><thead><tr><th>Sale date</th><th>Property</th><th class="r">Opening bid</th><th>Status</th><th>Occupancy</th><th>Lender</th><th>Official value</th><th>Listing</th></tr></thead><tbody id="fsBody"></tbody></table></div>
+    <div class="tbl" style="max-height:600px"><table><thead><tr><th>Sale date</th><th>Property</th><th class="r">Opening bid</th><th>Status</th><th>Occupancy</th><th>Lender</th><th>Official property record</th><th>Listing</th></tr></thead><tbody id="fsBody"></tbody></table></div>
     <div id="fsMore"></div>
     <div><div class="eyebrow" style="margin:8px 0 6px">More homes for sale by government and banks (official sites)</div><div class="links">
       <a href="https://www.hudhomestore.gov/searchresult?citystate=NJ" target="_blank" rel="noopener">HUD homes in NJ</a>
@@ -782,7 +782,8 @@ async function loadForSale(){
 function fsRows(){
   const q=($("#fsQ").value||"").trim().toUpperCase(),c=$("#fsCounty").value,st=$("#fsStatus").value,sort=$("#fsSort").value;
   let rows=FS.sales.filter(s=>(!c||s.county===c)&&(st==="all"||s._open)&&(!q||(s.address+" "+s.town+" "+s.zip+" "+s.county).toUpperCase().includes(q)));
-  const by={soon:(a,b)=>(a._d||9e15)-(b._d||9e15),low:(a,b)=>(a.upset||9e15)-(b.upset||9e15),high:(a,b)=>(b.upset||0)-(a.upset||0)}[sort];
+  const by={soon:(a,b)=>(a._d||9e15)-(b._d||9e15),low:(a,b)=>(a.upset||9e15)-(b.upset||9e15),high:(a,b)=>(b.upset||0)-(a.upset||0),
+    deal:(a,b)=>(a.bid_pct_of_assessed||9)-(b.bid_pct_of_assessed||9)}[sort];
   return rows.sort(by);
 }
 function fillForSale(){
@@ -794,14 +795,22 @@ function fillForSale(){
     <td>${esc(s.status||"")}${s.adjournments?`<br><span class="muted">${s.adjournments} postponement${s.adjournments>1?"s":""}</span>`:""}</td>
     <td>${esc(s.occupancy||"")}</td>
     <td style="white-space:normal;min-width:160px" class="muted">${esc((s.plaintiff||"").slice(0,70))}</td>
-    <td><button class="btn" type="button" data-i="${i}" style="padding:6px 10px;font-size:.8rem">Value</button><div class="fsval hint" id="fsv${i}"></div></td>
+    <td style="white-space:normal;min-width:190px">${fsRecord(s)||`<button class="btn" type="button" data-i="${i}" style="padding:6px 10px;font-size:.8rem">Value</button>`}<div class="fsval hint" id="fsv${i}"></div></td>
     <td><a class="sold" href="${esc(s.list_url)}" target="_blank" rel="noopener">Official list</a><br><span class="muted" style="font-size:.75rem">#${esc(s.sheriff_no||"")}</span></td></tr>`).join("")
     ||'<tr><td colspan="8" class="muted">No sales match. Try another town, county or "All statuses".</td></tr>';
   $("#fsBody").querySelectorAll("button[data-i]").forEach(b=>b.onclick=()=>fsValue(rows[+b.dataset.i],$("#fsv"+b.dataset.i),b));
   $("#fsMore").innerHTML=rows.length>fsShown?`<button class="btn" type="button" id="fsMoreBtn" style="margin-top:8px;background:var(--muted)">Show more (${(rows.length-fsShown).toLocaleString("en-US")} left)</button>`:`<div class="hint" style="margin-top:6px">${rows.length.toLocaleString("en-US")} sales shown.</div>`;
   const mb=$("#fsMoreBtn");if(mb)mb.onclick=()=>{fsShown+=200;fillForSale()};
 }
-// Official tax record for a listing: assessed value, last sale, year built (compare with the opening bid).
+// Official tax record attached by the daily refresh.
+function fsRecord(s){
+  const t=s.tax_record;if(!t)return "";
+  const pct=s.bid_pct_of_assessed;
+  const bits=[t.type,t.year_built?`built ${t.year_built}`:null,t.acres&&!/\b(UNIT|APT|#)/i.test(s.street||"")?`${(+t.acres).toFixed(2)} ac`:null,t.tax?`tax ${money(t.tax)}/yr`:null,
+    t.last_sale_price?`last sold ${money(t.last_sale_price)}${t.last_sale_date?" ("+t.last_sale_date.slice(0,4)+")":""}`:null].filter(Boolean);
+  return `<strong>${money(t.assessed)}</strong> <span class="muted">assessed</span>${pct?`<br><span class="chg ${pct<0.8?"down":pct>1.1?"up":""}" style="font-weight:600">Bid = ${(pct*100).toFixed(0)}% of value</span>`:""}<br><span class="muted" style="font-size:.8rem">${esc(bits.join(" · "))}</span>`;
+}
+// Official tax record looked up on demand (for listings the daily refresh could not match).
 async function fsValue(s,el,btn){
   btn.disabled=true;el.textContent="Looking up…";
   try{
@@ -826,9 +835,11 @@ async function downloadForSale(){
     await loadScript("lib/exceljs.min.js");
     const rows=fsRows();
     const wb=new ExcelJS.Workbook();const ws=wb.addWorksheet("NJ sheriff sales",{views:[{state:"frozen",ySplit:1}]});
-    const cols=[["Sale date",14,"mmm d, yyyy"],["Street",32,"@"],["Town",18,"@"],["ZIP",8,"@"],["County",12,"@"],["Opening bid (approx. upset)",16,'"$"#,##0'],["Status",22,"@"],["Postponements",12,"0"],["First scheduled",14,"@"],["Occupancy",12,"@"],["Lender (plaintiff)",40,"@"],["Owner (defendant)",40,"@"],["Block / lot",20,"@"],["Lot dimensions",22,"@"],["Lender's attorney",30,"@"],["Attorney phone",14,"@"],["Sheriff #",14,"@"],["Official list",40,"@"]];
+    const cols=[["Sale date",14,"mmm d, yyyy"],["Street",32,"@"],["Town",18,"@"],["ZIP",8,"@"],["County",12,"@"],["Opening bid (approx. upset)",16,'"$"#,##0'],
+      ["Assessed value",15,'"$"#,##0'],["Bid as % of assessed",12,"0%"],["Property type",22,"@"],["Year built",10,"0"],["Lot (acres)",10,"0.000"],["Annual property tax",14,'"$"#,##0'],["Last sale price",14,'"$"#,##0'],["Last sale date",13,"@"],["Owner mailing address",36,"@"],["Status",22,"@"],["Postponements",12,"0"],["First scheduled",14,"@"],["Occupancy",12,"@"],["Lender (plaintiff)",40,"@"],["Owner (defendant)",40,"@"],["Block / lot",20,"@"],["Lot dimensions",22,"@"],["Lender's attorney",30,"@"],["Attorney phone",14,"@"],["Sheriff #",14,"@"],["Official list",40,"@"]];
     ws.columns=cols.map(([h,w,f])=>({header:h,key:h,width:w,style:{numFmt:f}}));
-    for(const s of rows)ws.addRow({"Sale date":s._d?new Date(Date.UTC(s._d.getFullYear(),s._d.getMonth(),s._d.getDate())):s.sale_date,"Street":s.street||s.address,"Town":s.town,"ZIP":s.zip,"County":s.county,"Opening bid (approx. upset)":s.upset||null,"Status":s.status,"Postponements":s.adjournments??null,"First scheduled":s.first_scheduled,"Occupancy":s.occupancy,"Lender (plaintiff)":s.plaintiff,"Owner (defendant)":s.defendant,"Block / lot":s.block_lot,"Lot dimensions":s.dimensions,"Lender's attorney":s.attorney,"Attorney phone":s.attorney_phone,"Sheriff #":s.sheriff_no,"Official list":s.list_url?{text:"Open",hyperlink:s.list_url}:null});
+    for(const s of rows)ws.addRow({"Sale date":s._d?new Date(Date.UTC(s._d.getFullYear(),s._d.getMonth(),s._d.getDate())):s.sale_date,"Street":s.street||s.address,"Town":s.town,"ZIP":s.zip,"County":s.county,"Opening bid (approx. upset)":s.upset||null,
+      "Assessed value":s.tax_record?.assessed||null,"Bid as % of assessed":s.bid_pct_of_assessed||null,"Property type":s.tax_record?.type||null,"Year built":s.tax_record?.year_built||null,"Lot (acres)":s.tax_record?.acres||null,"Annual property tax":s.tax_record?.tax||null,"Last sale price":s.tax_record?.last_sale_price||null,"Last sale date":s.tax_record?.last_sale_date||null,"Owner mailing address":s.tax_record?.owner_mail||null,"Status":s.status,"Postponements":s.adjournments??null,"First scheduled":s.first_scheduled,"Occupancy":s.occupancy,"Lender (plaintiff)":s.plaintiff,"Owner (defendant)":s.defendant,"Block / lot":s.block_lot,"Lot dimensions":s.dimensions,"Lender's attorney":s.attorney,"Attorney phone":s.attorney_phone,"Sheriff #":s.sheriff_no,"Official list":s.list_url?{text:"Open",hyperlink:s.list_url}:null});
     const h=ws.getRow(1);h.height=30;h.eachCell(c=>{c.font={bold:true,color:{argb:"FFFFFFFF"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF0F6B57"}};c.alignment={vertical:"middle",wrapText:true}});
     ws.autoFilter={from:{row:1,column:1},to:{row:1,column:cols.length}};
     const about=wb.addWorksheet("About");about.columns=[{width:16},{width:90}];
