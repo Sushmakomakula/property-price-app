@@ -135,16 +135,35 @@ def load_towns():
 def split_address(a):
     """'27 ROBBINWOOD TERRACE LINDEN NJ 07036' -> ('27 Robbinwood Terrace', 'Linden', '07036', 'LINDEN CITY')"""
     if not TOWNS: load_towns()
-    a = re.sub(r"\s+", " ", a).strip().upper().replace(".", "")
+    a = re.sub(r"\s+", " ", a).strip().upper().replace(".", "").replace("NEW JERSEY", "NJ")
     m = re.search(r"^(.*?)[ ,]*\bNJ\b,?\s*(\d{5})?", a)
     before, z = (m.group(1), m.group(2) or "") if m else (a, "")
     before = before.strip(" ,")
+    # "HAMMONTON (MULLICA TOWNSHIP)" / "OAKLYN(WOODLYNNE BOROUGH)": the part in brackets is often the official municipality.
+    inner = None
+    pm = re.search(r"\s*\(([^)]*)\)\s*$", before)
+    if pm:
+        inner = pm.group(1).strip(); before = before[: pm.start()].strip(" ,")
     town, mun = "", None
+    nospace = lambda x: x.replace(" ", "")
     for t, official in TOWNS:
         if before.endswith(" " + t) or before.endswith("," + t):
             town, mun = t, official; before = before[: -len(t)].strip(" ,"); break
+    if not town:   # spelling with or without spaces, e.g. RIVER VALE / RIVERVALE
+        words = before.split()
+        for n in (3, 2, 1):
+            if len(words) > n:
+                cand = nospace(" ".join(words[-n:]))
+                hit = next(((t, o) for t, o in TOWNS if nospace(t) == cand), None)
+                if hit:
+                    town, mun = " ".join(words[-n:]), hit[1]; before = " ".join(words[:-n]); break
+    if inner:
+        hit = next(((t, o) for t, o in TOWNS if t == inner or nospace(t) == nospace(inner)), None)
+        if hit and hit[1]: mun = hit[1]
+        if not town and hit: town = hit[0]
     street = re.sub(r"\s+(A/?K/?A|AKA)\s.*$", "", before).strip(" ,")
-    return street.title(), re.sub(r"\s+" + SUFFIX + r"$", "", town).title(), z, mun
+    # Drop only "Township"/"Borough" words; "City", "Town" and "Village" are often part of the name (Jersey City, Atlantic City).
+    return street.title(), re.sub(r"\s+(?:TOWNSHIP|TWNSHP|TWP|BOROUGH|BORO)$", "", town).title(), z, mun
 
 def county_sales(cid, name):
     o = opener()
