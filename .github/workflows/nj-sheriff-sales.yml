@@ -36,7 +36,11 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m "Refresh NJ sheriff sales"
-            git push
+            # Someone may have pushed while this ran; put the refresh on top and retry.
+            for i in 1 2 3; do
+              git pull --rebase origin main && git push && break
+              sleep 10
+            done
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
       - name: Republish website
