@@ -642,24 +642,43 @@ function fillArea(){
   $("#areaMore").innerHTML=rows.length>areaShown?`<button class="btn" type="button" id="areaMoreBtn" style="margin-top:8px;background:var(--muted)">Show more (${(rows.length-areaShown).toLocaleString("en-US")} left)</button>`:`<div class="hint" style="margin-top:6px">${rows.length.toLocaleString("en-US")} properties shown.</div>`;
   const mb=$("#areaMoreBtn");if(mb)mb.onclick=()=>{areaShown+=500;fillArea()};
 }
-function loadScript(src){return new Promise((ok,no)=>{if(window.XLSX)return ok();const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
+function loadScript(src){return new Promise((ok,no)=>{if(window.ExcelJS)return ok();const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
 async function downloadXlsx(){
   const msg=$("#areaDl");
   const native=window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform();
   if(native){msg.innerHTML='Downloads don\'t work inside the Android app. Open <a href="https://sushmakomakula.github.io/property-price-app/" target="_blank" rel="noopener">the website</a> in Chrome to download the Excel file.';return}
   msg.textContent="Preparing the Excel file…";
   try{
-    await loadScript("lib/xlsx.mini.min.js");
+    await loadScript("lib/exceljs.min.js");
     const rows=areaRows().map(AREA.toRow);
-    const ws=XLSX.utils.json_to_sheet(rows);
-    ws["!cols"]=Object.keys(rows[0]).map(k=>({wch:Math.min(40,Math.max(10,k.length+2,...rows.slice(0,200).map(r=>String(r[k]).length)))}));
-    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Properties");
-    const about=XLSX.utils.aoa_to_sheet([["Area",areaData.name],["State",areaData.st],["Properties",rows.length],["Source",areaData.provider.name],["Downloaded",new Date().toISOString().slice(0,10)],["Note","Public tax records. Values are set for property tax and can differ from market price."]]);
-    XLSX.utils.book_append_sheet(wb,about,"About");
+    // Keep only columns that have something in them for this area.
+    const cols=AREA.COLS.filter(c=>c[0]!=="Value type"&&rows.some(r=>r[c[0]]!==null&&r[c[0]]!==undefined&&r[c[0]]!==""));
+    const valueType=(rows.find(r=>r["Value type"])||{})["Value type"];
+    const fmt={money:'"$"#,##0',date:"mmm d, yyyy",int:"0",num:"0.000",text:"@"};
+    const wb=new ExcelJS.Workbook();wb.creator="US Property Price Finder";
+    const ws=wb.addWorksheet("Properties",{views:[{state:"frozen",ySplit:1}]});
+    ws.columns=cols.map(([k,t,w])=>({header:k==="Value"&&valueType?valueType:k,key:k,width:w,style:{numFmt:fmt[t]}}));
+    // Sq ft gets a thousands separator; year built stays plain.
+    const sq=ws.getColumn("Living area (sq ft)");if(cols.some(c=>c[0]==="Living area (sq ft)"))sq.numFmt="#,##0";
+    for(const r of rows){const o={};for(const [k] of cols)o[k]=r[k];ws.addRow(o)}
+    const h=ws.getRow(1);h.height=22;
+    h.eachCell(c=>{c.font={bold:true,color:{argb:"FFFFFFFF"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF0F6B57"}};c.alignment={vertical:"middle",wrapText:true};c.numFmt="@"});
+    ws.autoFilter={from:{row:1,column:1},to:{row:1,column:cols.length}};
+    const link=cols.findIndex(c=>c[0]==="Official record link");
+    if(link>=0)ws.getColumn(link+1).eachCell((c,i)=>{if(i>1&&c.value)c.value={text:"Open record",hyperlink:String(c.value)};if(i>1)c.font={color:{argb:"FF0F6B57"},underline:true}});
+    const about=wb.addWorksheet("About");
+    about.columns=[{width:16},{width:80}];
+    [["Area",areaData.name],["State",areaData.st],["Properties",rows.length],["Source",areaData.provider.name],["Downloaded",new Date().toISOString().slice(0,10)],
+     ["Note","Public tax records. Values are set for property tax and can differ from market price. Sales of $1 or $100 are usually family or government transfers, not market sales."]]
+      .forEach(r=>about.addRow(r));
+    about.getColumn(1).font={bold:true};about.getColumn(2).alignment={wrapText:true,vertical:"top"};
+    const buf=await wb.xlsx.writeBuffer();
+    const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
     const fname=`Properties ${areaData.name.replace(/[^\w ,.-]/g,"")} ${areaData.st}.xlsx`;
-    XLSX.writeFile(wb,fname);
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=fname;document.body.appendChild(a);a.click();
+    setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000);
     msg.textContent=`Downloaded “${fname}” (${rows.length.toLocaleString("en-US")} properties). Check your Downloads folder.`;
-  }catch(e){msg.textContent="The Excel file could not be created. Try again, or use a smaller area."}
+  }catch(e){console.error(e);msg.textContent="The Excel file could not be created. Try again, or use a smaller area."}
 }
 $("#areaForm").addEventListener("submit",e=>{e.preventDefault();loadArea()});
 

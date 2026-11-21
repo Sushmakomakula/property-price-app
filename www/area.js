@@ -64,24 +64,41 @@
     return { rows, total, capped: total > MAX, label, provider: p };
   }
 
-  // Flatten a mapped record into spreadsheet columns.
+  // Spreadsheet columns, in the same order as the app's table. type: text | money | date | int | num
+  const COLS = [
+    ["Address", "text", 38], ["Owner", "text", 34], ["Value", "money", 15], ["Value type", "text", 24],
+    ["Last sale price", "money", 15], ["Last sale date", "date", 14], ["Year built", "int", 11], ["Living area (sq ft)", "int", 14],
+    ["Bedrooms", "int", 10], ["Bathrooms", "text", 12], ["Rooms", "int", 8], ["Lot (acres)", "num", 11],
+    ["Land value", "money", 14], ["Building value", "money", 15], ["Assessed value", "money", 15],
+    ["Previous sale price", "money", 15], ["Previous sale date", "date", 14],
+    ["Property type", "text", 24], ["Style / building", "text", 24], ["Condition", "text", 12], ["Zoning", "text", 10],
+    ["County", "text", 14], ["Valuation year", "text", 12], ["Parcel / account ID", "text", 20], ["Official record link", "text", 30]
+  ];
+  // A calendar date that Excel shows on the right day whatever the viewer's time zone.
+  const xDate = d => {
+    if (!d || isNaN(d)) return null;
+    const utc = d.getUTCHours() === 0 && d.getUTCMinutes() === 0;
+    return utc ? new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+               : new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  };
+  // Flatten a mapped record into spreadsheet columns (numbers stay numbers, dates stay dates).
   function toRow(r) {
     const v = Object.fromEntries((r.values || []).filter(x => x[1]).map(x => [x[0], x[1]]));
     const first = (r.values || []).find(x => x[1]);
-    const d = x => (x && !isNaN(x) ? x.toISOString().slice(0, 10) : "");
+    const n = x => (x === null || x === undefined || x === "" ? null : +x);
     return {
-      "Address": r.address || "", "Owner": r.owner || "",
-      "Value": first ? first[1] : "", "Value type": first ? first[0] : "",
-      "Land value": v["Land"] || v["Land value"] || "", "Building value": v["Building"] || v["Building value"] || v["Improvements"] || v["Buildings"] || "",
-      "Assessed value": v["Assessed value"] || v["Assessed value (70% of appraised)"] || "",
-      "Last sale price": r.sale && r.sale.price ? r.sale.price : "", "Last sale date": r.sale ? d(r.sale.date) : "",
-      "Previous sale price": r.prior && r.prior.price ? r.prior.price : "", "Previous sale date": r.prior ? d(r.prior.date) : "",
-      "Year built": r.yearBuilt || "", "Living area (sq ft)": r.livingArea || "", "Bedrooms": r.beds || "", "Bathrooms": r.baths || "",
-      "Rooms": r.rooms || "", "Lot (acres)": r.lotAcres ? +(+r.lotAcres).toFixed(3) : "", "Property type": r.use || "",
-      "Style / building": r.style || r.building || "", "Condition": r.condition || "", "Zoning": r.zoning || "",
-      "County": r.county || "", "Valuation year": r.valueYear || "", "Parcel / account ID": r.id || "", "Official record link": r.link || ""
+      "Address": r.address || null, "Owner": r.owner || null,
+      "Value": first ? first[1] : null, "Value type": first ? first[0] : null,
+      "Last sale price": r.sale && r.sale.price ? r.sale.price : null, "Last sale date": r.sale ? xDate(r.sale.date) : null,
+      "Year built": n(r.yearBuilt), "Living area (sq ft)": n(r.livingArea), "Bedrooms": n(r.beds), "Bathrooms": r.baths ? String(r.baths) : null,
+      "Rooms": n(r.rooms), "Lot (acres)": r.lotAcres ? +(+r.lotAcres).toFixed(3) : null,
+      "Land value": v["Land"] || v["Land value"] || null, "Building value": v["Building"] || v["Building value"] || v["Improvements"] || v["Buildings"] || null,
+      "Assessed value": v["Assessed value"] || v["Assessed value (70% of appraised)"] || null,
+      "Previous sale price": r.prior && r.prior.price ? r.prior.price : null, "Previous sale date": r.prior ? xDate(r.prior.date) : null,
+      "Property type": r.use || null, "Style / building": r.style || r.building || null, "Condition": r.condition || null, "Zoning": r.zoning || null,
+      "County": r.county || null, "Valuation year": r.valueYear || null, "Parcel / account ID": r.id || null, "Official record link": r.link || null
     };
   }
 
-  window.AREA = { fetchArea, toRow, states: Object.keys(AREA), MAX };
+  window.AREA = { fetchArea, toRow, COLS, states: Object.keys(AREA), MAX };
 })();
