@@ -75,6 +75,7 @@
         values: [["Assessed value", pos(a.NET_VALUE)], ["Land", pos(a.LAND_VAL)], ["Improvements", pos(a.IMPRVT_VAL)], ["Last year's property tax", pos(a.LAST_YR_TX)]],
         sale: { price: pos(a.SALE_PRICE), date: yymmdd(a.DEED_DATE) },
         yearBuilt: pos(a.YR_CONSTR), lotAcres: pos(a.CALC_ACRE), building: txt(a.BLDG_DESC), lotSize: txt(a.LAND_DESC),
+        use: ({"1": "Vacant land", "2": "Residential", "3A": "Farm (house)", "3B": "Farmland", "4A": "Commercial", "4B": "Industrial", "4C": "Apartments", "15A": "Exempt (school)", "15B": "Exempt (school)", "15C": "Exempt (public)", "15D": "Exempt (church/charity)", "15E": "Exempt (cemetery)", "15F": "Exempt (other)"})[txt(a.PROP_CLASS)] || "",
         note: "New Jersey assessed values can be well below market value in towns that have not reassessed recently."
       })
     },
@@ -99,6 +100,7 @@
         address: [txt(a.SITEADRESS), txt(a.PLACENAME), txt(a.ZIPCODE)].filter(Boolean).join(", "), owner: [txt(a.OWNERNME1), txt(a.OWNERNME2)].filter(Boolean).join(" & "), county: txt(a.CONAME),
         values: [["Estimated fair market value", pos(a.ESTFMKVALUE)], ["Assessed value", pos(a.CNTASSDVALUE)], ["Land", pos(a.LNDVALUE)], ["Improvements", pos(a.IMPVALUE)], ["Net property tax", pos(a.NETPRPTA)]],
         valueYear: txt(a.TAXROLLYEAR), lotAcres: pos(a.ASSDACRES) || pos(a.DEEDACRES) || pos(a.GISACRES),
+        use: ({"1": "Residential", "2": "Commercial", "3": "Manufacturing", "4": "Agricultural", "5": "Undeveloped", "5M": "Agricultural forest", "6": "Productive forest", "7": "Other", "X1": "Exempt", "X2": "Exempt", "X3": "Exempt", "X4": "Exempt"})[txt(a.PROPCLASS).split(",")[0]] || "",
         noSale: "Wisconsin's statewide parcel file does not include sale prices."
       })
     }

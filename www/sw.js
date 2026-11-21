@@ -1,6 +1,6 @@
 // Caches the app and its data so it opens fast and works offline.
 // Bump VERSION whenever the data files are refreshed.
-const VERSION = "v2026-10-e";
+const VERSION = "v2026-10-f";
 const FILES = [
   "./", "index.html", "manifest.webmanifest",
   "lib/d3.min.js", "lib/topojson-client.min.js", "parcels.js", "area.js", "lib/exceljs.min.js",

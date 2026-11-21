@@ -11,11 +11,11 @@
     MA: { zip: (z, t) => t ? `CITY='${up(t)}' AND ZIP LIKE '${z}%'` : `ZIP LIKE '${z}%'`, town: t => `CITY='${up(t)}'`, oid: "OBJECTID",
           fields: "SITE_ADDR,ADDR_NUM,CITY,ZIP,OWNER1,TOTAL_VAL,LAND_VAL,BLDG_VAL,OTHER_VAL,FY,LS_PRICE,LS_DATE,YEAR_BUILT,RES_AREA,BLD_AREA,NUM_ROOMS,LOT_SIZE,USE_DESC,STYLE,ZONING" },
     NJ: { zip: z => `ZIP5='${z}'`, town: t => `MUN_NAME LIKE '${up(t)}%'`, oid: "OBJECTID",
-          fields: "PROP_LOC,MUN_NAME,ZIP5,ZIP_CODE,OWNER_NAME,COUNTY,NET_VALUE,LAND_VAL,IMPRVT_VAL,LAST_YR_TX,SALE_PRICE,DEED_DATE,YR_CONSTR,CALC_ACRE,BLDG_DESC,LAND_DESC" },
+          fields: "PROP_CLASS,PROP_LOC,MUN_NAME,ZIP5,ZIP_CODE,OWNER_NAME,COUNTY,NET_VALUE,LAND_VAL,IMPRVT_VAL,LAST_YR_TX,SALE_PRICE,DEED_DATE,YR_CONSTR,CALC_ACRE,BLDG_DESC,LAND_DESC" },
     NC: { zipRadius: 1500, town: t => `scity='${up(t)}'`, oid: "objectid",
           fields: "siteadd,saddno,scity,szip,ownname,ownname2,cntyname,parval,parvaltype,landval,improvval,saledatetx,saledate,structyear,recareano,gisacres,parusedsc2,parusedesc,sourceagnt,sourceref" },
     WI: { zip: z => `ZIPCODE='${z}'`, town: t => `PLACENAME LIKE '%${up(t)}%'`, oid: "OBJECTID",
-          fields: "SITEADRESS,ADDNUM,PLACENAME,ZIPCODE,OWNERNME1,OWNERNME2,CONAME,ESTFMKVALUE,CNTASSDVALUE,LNDVALUE,IMPVALUE,NETPRPTA,TAXROLLYEAR,ASSDACRES,DEEDACRES,GISACRES" }
+          fields: "PROPCLASS,SITEADRESS,ADDNUM,PLACENAME,ZIPCODE,OWNERNME1,OWNERNME2,CONAME,ESTFMKVALUE,CNTASSDVALUE,LNDVALUE,IMPVALUE,NETPRPTA,TAXROLLYEAR,ASSDACRES,DEEDACRES,GISACRES" }
   };
 
   async function call(url, params) {

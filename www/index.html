@@ -164,6 +164,10 @@ footer a{color:var(--accent)}
   </section>
 
 
+  <section class="card lookup" aria-label="US market data download">
+    <div><h2>US market data for investors</h2><div class="hint">One Excel workbook with every metro area, county and ZIP code: median sale price, typical value, rent, rental yield, 1-year price forecast, days to sell, sale-to-list ratio, price cuts and supply, plus top-10 lists. Data through October 2026 (Zillow Research, Realtor.com).</div></div>
+    <div class="links"><a href="downloads/US-Real-Estate-Market-Data.xlsx" download>Download US market data (Excel, 894 metros · 3,140 counties · 30,067 ZIPs)</a></div>
+  </section>
   <section class="card lookup" aria-label="All properties in an area">
     <div><h2>All properties in an area</h2><div class="hint">Type a ZIP code or a town and state to list every property with its official value and sale record, then download it as an Excel file. Works in Connecticut, Maryland, Massachusetts, New Jersey, North Carolina and Wisconsin.</div></div>
     <form id="areaForm">
@@ -586,16 +590,24 @@ async function loadArea(){
     if(ctl!==areaCtl)return;
     if(!res||res.error){out.innerHTML=`<div class="warn">${esc(res?res.error:"Not available")}</div>`;return}
     if(!res.rows.length){out.innerHTML='<div class="warn">No properties were found for that area. For towns, use the official town name; for ZIP codes, check the number.</div>';return}
-    areaData={...res,st:a.st,name:a.zip?("ZIP "+a.zip):a.town};areaShown=200;renderArea();
+    areaData={...res,st:a.st,name:a.zip?("ZIP "+a.zip):a.town};areaShown=200;setCompsWindow();renderArea();
   }catch(e){console.error("area lookup failed",e);if(e.message==="cancelled"||ctl.signal.aborted){out.innerHTML='<p class="muted">Cancelled.</p>';return}
     out.innerHTML='<div class="warn">The state records service did not respond. Try again in a minute.</div>'}
   finally{if(ctl===areaCtl)btn.disabled=false}
 }
 const median=a=>{a=a.filter(x=>x>0).sort((x,y)=>x-y);if(!a.length)return null;const m=a.length>>1;return a.length%2?a[m]:(a[m-1]+a[m])/2};
 const headVal=r=>{const v=(r.values||[]).find(x=>x[1]);return v?v[1]:null};
+const INSTITUTION=/\b(CHURCH|PARISH|DIOCESE|MINISTR|TEMPLE|SYNAGOGUE|MOSQUE|CITY OF|TOWN OF|VILLAGE OF|COUNTY OF|STATE OF|COMMONWEALTH|UNITED STATES|USA|BOARD OF|SCHOOL|UNIVERSITY|COLLEGE|AUTHORITY|DEPARTMENT|DEPT OF|HOSPITAL|HOUSING AUTH)\b/i;
+const isHome=r=>{const u=(r.use||"")+" "+(r.style||"")+" "+(r.building||"");return /RES|SINGL|FAM|CONDO|TOWN|DWELL|APART|MULTI|DUPLEX|HOUSE|STRY|2S-|1S-/i.test(u)&&!/EXEMPT|COMMERC|INDUST|VACANT|FOREST|AGRIC|FARMLAND/i.test(u)&&!INSTITUTION.test(r.owner||"")};
+// Comps window: the 3 years up to the newest sale in this area's records (some states' records lag behind today).
+let compsFrom=0;
+const setCompsWindow=()=>{let newest=0;for(const r of areaData.rows){const t=r.sale&&r.sale.price>=10000&&r.sale.date?+r.sale.date:0;if(t>newest&&t<=Date.now())newest=t}compsFrom=newest?newest-3*365*864e5:0};
+const isComp=r=>isHome(r)&&r.sale&&r.sale.price>=10000&&r.sale.date&&+r.sale.date>=compsFrom;
 function areaRows(){
   const f=($("#areaFilter")?.value||"").trim().toUpperCase();
+  const show=$("#areaShow")?.value||"all";
   let rows=areaData.rows;
+  if(show==="homes")rows=rows.filter(isHome);else if(show==="comps")rows=rows.filter(isComp);
   if(f)rows=rows.filter(r=>(r.address+" "+(r.owner||"")).toUpperCase().includes(f));
   const s=$("#areaSort")?.value||"value-desc";
   const sd=r=>r.sale&&r.sale.date&&!isNaN(r.sale.date)?+r.sale.date:0;
@@ -611,7 +623,7 @@ function renderArea(){
   const recent=d.rows.filter(r=>r.sale&&r.sale.price>=10000&&r.sale.date&&+r.sale.date>since).map(r=>r.sale.price); // skips $1 family/government transfers
   const vt=(d.rows.find(r=>headVal(r))||{values:[["Value"]]}).values.find(x=>x[1])?.[0]||"Value";
   const hasSale=d.rows.some(r=>r.sale&&r.sale.price);
-  const filterVal=$("#areaFilter")?.value||"",sortVal=$("#areaSort")?.value||"value-desc";
+  const filterVal=$("#areaFilter")?.value||"",sortVal=$("#areaSort")?.value||"value-desc",showVal=$("#areaShow")?.value||"all";
   out.innerHTML=`<div class="areactx" style="margin-bottom:12px">
       <div><span>Properties</span><span class="num">${d.rows.length.toLocaleString("en-US")}${d.capped?` of ${d.total.toLocaleString("en-US")}`:""}</span></div>
       <div><span>Median ${esc(vt.toLowerCase())}</span><span class="num">${money(median(vals))}</span></div>
@@ -620,17 +632,21 @@ function renderArea(){
     ${d.capped?`<div class="warn" style="margin-bottom:10px">This area has ${d.total.toLocaleString("en-US")} properties; the first ${AREA.MAX.toLocaleString("en-US")} are loaded. Use a ZIP code or smaller town to see all of them.</div>`:""}
     <div class="searchrow" style="flex-wrap:wrap">
       <input type="search" id="areaFilter" placeholder="Filter by street or owner" value="${esc(filterVal)}" style="flex:1 1 200px">
+      <select id="areaShow" aria-label="Which properties to show" style="font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
+        <option value="all">All properties</option><option value="homes">Homes only</option>${hasSale?'<option value="comps">Comps: recent home sales</option>':""}</select>
       <select id="areaSort" aria-label="Sort properties" style="font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)">
         <option value="value-desc">Highest value</option><option value="value-asc">Lowest value</option>
         ${hasSale?'<option value="sale-recent">Most recent sale</option><option value="sale-price">Highest sale price</option>':""}
         <option value="address">Address</option></select>
       <button class="btn" type="button" id="areaXlsx">Download Excel file</button>
     </div>
+    <div id="areaCounts" class="hint" style="margin-bottom:4px"></div>
     <div id="areaDl" class="hint"></div>
     <div class="tbl" style="max-height:560px"><table><thead><tr><th>Address</th><th>Owner</th><th class="r">${esc(vt)}</th>${hasSale?'<th class="r">Last sale</th><th>Sale date</th>':""}<th class="r">Built</th><th class="r">Sq ft</th></tr></thead><tbody id="areaBody"></tbody></table></div>
     <div id="areaMore"></div>
     <div class="hint" style="margin-top:8px">Source: ${esc(d.provider.name)}. Public tax records.</div>`;
-  $("#areaSort").value=sortVal;
+  $("#areaSort").value=sortVal;if([...$("#areaShow").options].some(o=>o.value===showVal))$("#areaShow").value=showVal;
+  $("#areaShow").addEventListener("change",()=>{areaShown=200;if($("#areaShow").value==="comps")$("#areaSort").value="sale-recent";fillArea()});
   $("#areaFilter").addEventListener("input",()=>{areaShown=200;fillArea()});
   $("#areaSort").addEventListener("change",()=>{areaShown=200;fillArea()});
   $("#areaXlsx").onclick=downloadXlsx;
@@ -639,6 +655,9 @@ function renderArea(){
 function fillArea(){
   const rows=areaRows(),hasSale=areaData.rows.some(r=>r.sale&&r.sale.price);
   $("#areaBody").innerHTML=rows.slice(0,areaShown).map(r=>`<tr><td>${esc(r.address)}</td><td>${esc(r.owner||"")}</td><td class="r">${money(headVal(r))}</td>${hasSale?`<td class="r">${r.sale&&r.sale.price?money(r.sale.price):"—"}</td><td>${r.sale?fmtDate(r.sale.date):""}</td>`:""}<td class="r">${r.yearBuilt||""}</td><td class="r">${r.livingArea?r.livingArea.toLocaleString("en-US"):""}</td></tr>`).join("");
+  const homes=areaData.rows.filter(isHome).length,comps=areaData.rows.filter(isComp);
+  const from=compsFrom?new Date(compsFrom).toLocaleDateString("en-US",{month:"short",year:"numeric"}):"";
+  $("#areaCounts").innerHTML=`${homes.toLocaleString("en-US")} homes${hasSale&&compsFrom?` · ${comps.length.toLocaleString("en-US")} home sales since ${from} (median ${money(median(comps.map(r=>r.sale.price)))})`:""}`;
   $("#areaMore").innerHTML=rows.length>areaShown?`<button class="btn" type="button" id="areaMoreBtn" style="margin-top:8px;background:var(--muted)">Show more (${(rows.length-areaShown).toLocaleString("en-US")} left)</button>`:`<div class="hint" style="margin-top:6px">${rows.length.toLocaleString("en-US")} properties shown.</div>`;
   const mb=$("#areaMoreBtn");if(mb)mb.onclick=()=>{areaShown+=500;fillArea()};
 }
@@ -652,14 +671,14 @@ async function downloadXlsx(){
     await loadScript("lib/exceljs.min.js");
     const rows=areaRows().map(AREA.toRow);
     // Keep only columns that have something in them for this area.
-    const cols=AREA.COLS.filter(c=>c[0]!=="Value type"&&rows.some(r=>r[c[0]]!==null&&r[c[0]]!==undefined&&r[c[0]]!==""));
     const valueType=(rows.find(r=>r["Value type"])||{})["Value type"];
+    const cols=AREA.COLS.filter(c=>c[0]!=="Value type"&&c[0]!==valueType&&rows.some(r=>r[c[0]]!==null&&r[c[0]]!==undefined&&r[c[0]]!==""));
     const fmt={money:'"$"#,##0',date:"mmm d, yyyy",int:"0",num:"0.000",text:"@"};
     const wb=new ExcelJS.Workbook();wb.creator="US Property Price Finder";
     const ws=wb.addWorksheet("Properties",{views:[{state:"frozen",ySplit:1}]});
     ws.columns=cols.map(([k,t,w])=>({header:k==="Value"&&valueType?valueType:k,key:k,width:w,style:{numFmt:fmt[t]}}));
     // Sq ft gets a thousands separator; year built stays plain.
-    const sq=ws.getColumn("Living area (sq ft)");if(cols.some(c=>c[0]==="Living area (sq ft)"))sq.numFmt="#,##0";
+    if(cols.some(c=>c[0]==="Living area (sq ft)"))ws.getColumn("Living area (sq ft)").numFmt="#,##0";
     for(const r of rows){const o={};for(const [k] of cols)o[k]=r[k];ws.addRow(o)}
     const h=ws.getRow(1);h.height=22;
     h.eachCell(c=>{c.font={bold:true,color:{argb:"FFFFFFFF"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF0F6B57"}};c.alignment={vertical:"middle",wrapText:true};c.numFmt="@"});
@@ -674,7 +693,8 @@ async function downloadXlsx(){
     about.getColumn(1).font={bold:true};about.getColumn(2).alignment={wrapText:true,vertical:"top"};
     const buf=await wb.xlsx.writeBuffer();
     const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
-    const fname=`Properties ${areaData.name.replace(/[^\w ,.-]/g,"")} ${areaData.st}.xlsx`;
+    const showVal=$("#areaShow")?.value||"all";
+    const fname=`${showVal==="comps"?"Comps":showVal==="homes"?"Homes":"Properties"} ${areaData.name.replace(/[^\w ,.-]/g,"")} ${areaData.st}.xlsx`;
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=fname;document.body.appendChild(a);a.click();
     setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000);
     msg.textContent=`Downloaded “${fname}” (${rows.length.toLocaleString("en-US")} properties). Check your Downloads folder.`;
